@@ -1,0 +1,26 @@
+jar {
+    manifest {
+        attributes 'Implementation-Title': 'SLC Upload Library', 'Implementation-Version': version
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+	compile project(':slc-common-library')
+	compile 'com.amazonaws:aws-java-sdk:1.8.9.1'
+}
+
+test {
+    systemProperties 'property': 'value'
+}
+
+uploadArchives {
+    repositories {
+       flatDir {
+           dirs 'repos'
+       }
+    }
+}

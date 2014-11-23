@@ -1,0 +1,52 @@
+apply plugin: 'launch4j'
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'edu.sc.seis.gradle:launch4j:1.0.6'
+    }
+}
+
+jar {
+    manifest {
+        attributes 'Implementation-Title': 'SLC Upload UI', 'Implementation-Version': version
+    }
+}
+
+launch4j {
+	headerType = 'gui'
+	launch4jCmd = 'C:\\Program Files (x86)\\Launch4j\\launch4j.exe'
+    mainClassName = "net.bernerbits.avolve.slcupload.ui.SLCUploadUI"
+    bundledJrePath = System.properties['java.home']
+    maxHeapSize = 1536
+}
+
+repositories {
+    mavenCentral()
+    swtRepo()
+}
+
+dependencies {
+    compile 'org.eclipse.swt:' + swtPlatform() + ':4.4'
+    compile 'org.eclipse.jface:org.eclipse.jface:3.7.0.v20110928-1505'
+    compile 'org.apache.xmlgraphics:batik-transcoder:1.7'
+    compile 'org.apache.xmlgraphics:batik-codec:1.7'
+
+    compile project(':slc-upload-library')
+    compile project(':slc-import-library')
+}
+
+test {
+    systemProperties 'property': 'value'
+}
+
+uploadArchives {
+    repositories {
+       flatDir {
+           dirs 'repos'
+       }
+    }
+}

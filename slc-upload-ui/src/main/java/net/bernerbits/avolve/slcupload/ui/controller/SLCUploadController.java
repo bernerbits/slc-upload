@@ -1,0 +1,162 @@
+package net.bernerbits.avolve.slcupload.ui.controller;
+
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import net.bernerbits.avolve.slcupload.FileTransferer;
+import net.bernerbits.avolve.slcupload.S3Connection;
+import net.bernerbits.avolve.slcupload.S3Connector;
+import net.bernerbits.avolve.slcupload.dataimport.SpreadsheetImporter;
+import net.bernerbits.avolve.slcupload.dataimport.exception.SpreadsheetImportException;
+import net.bernerbits.avolve.slcupload.dataimport.model.SpreadsheetRow;
+import net.bernerbits.avolve.slcupload.model.FileTransferObject;
+import net.bernerbits.avolve.slcupload.model.RemoteFolder;
+import net.bernerbits.avolve.slcupload.ui.S3Dialog;
+import net.bernerbits.avolve.slcupload.ui.handler.BucketHandler;
+import net.bernerbits.avolve.slcupload.ui.handler.ConnectionCheckHandler;
+import net.bernerbits.avolve.slcupload.ui.handler.FileSelectedHandler;
+import net.bernerbits.avolve.slcupload.ui.handler.FileTransferUpdateHandler;
+import net.bernerbits.avolve.slcupload.ui.handler.ProgresssHandler;
+import net.bernerbits.avolve.slcupload.ui.handler.ValidationHandler;
+
+import org.eclipse.swt.SWT;
+import org.eclipse.swt.widgets.DirectoryDialog;
+import org.eclipse.swt.widgets.FileDialog;
+import org.eclipse.swt.widgets.Shell;
+
+public class SLCUploadController {
+
+	private final Shell shell;
+
+	private final SpreadsheetImporter importer;
+
+	private final S3Connector s3Connector;
+
+	private final FileTransferer transferer;
+
+	private RemoteFolder s3Destination;
+	private String folderDestination;
+	private Iterable<SpreadsheetRow> rows;
+
+	private List<FileTransferObject> convertedRows;
+
+	
+	public SLCUploadController(Shell shell) {
+		this.shell = shell;
+		this.importer = new SpreadsheetImporter();
+		this.s3Connector = new S3Connector();
+		this.transferer = new FileTransferer();
+	}
+
+	public void spreadsheetFileSearchRequested(FileSelectedHandler handler) {
+		FileDialog fileDialog = new FileDialog(shell, SWT.OPEN);
+		fileDialog.setFilterNames(new String[] { "Spreadsheets" });
+		fileDialog.setFilterExtensions(new String[] { "*.xlsx;*.xsl;*.csv" });
+		String filterPath = "/";
+		String platform = SWT.getPlatform();
+		if (platform.equals("win32") || platform.equals("wpf")) {
+			filterPath = "c:\\";
+		}
+		fileDialog.setFilterPath(filterPath);
+		String fileSelected = fileDialog.open();
+		if (fileSelected != null) {
+			handler.fileSelected(fileSelected);
+		}
+	}
+
+	public Iterable<SpreadsheetRow> openSpreadsheet(String inputFile) throws SpreadsheetImportException {
+		rows = importer.importSpreadsheet(inputFile);
+		return rows;
+	}
+
+	public void destinationFolderSearchRequested(FileSelectedHandler handler) {
+		DirectoryDialog fileDialog = new DirectoryDialog(shell, SWT.OPEN);
+		String filterPath = "/";
+		String platform = SWT.getPlatform();
+		if (platform.equals("win32") || platform.equals("wpf")) {
+			filterPath = "c:\\";
+		}
+		fileDialog.setFilterPath(filterPath);
+		String fileSelected = fileDialog.open();
+		if (fileSelected != null) {
+			s3Destination = null;
+			folderDestination = fileSelected;
+			handler.fileSelected(fileSelected);
+		}
+	}
+
+	public void s3BucketSearchRequested(FileSelectedHandler handler) {
+		S3Dialog s3Dialog = new S3Dialog(this, shell, SWT.OPEN);
+		RemoteFolder locSelected = s3Dialog.open();
+		if (locSelected != null) {
+			s3Destination = locSelected;
+			folderDestination = null;
+			handler.fileSelected(locSelected.getPath());
+		}
+	}
+
+	public void listBuckets(String awsKey, String awsSecret, ConnectionCheckHandler connHandler, BucketHandler handler) {
+		S3Connection connection = s3Connector.connect(awsKey, awsSecret);
+		if (connection != null)
+		{
+			handler.bucketsLoaded(connection.listRemoteFolders());
+		}
+		connHandler.connectionCheckCompleted(connection != null);
+	}
+
+	public boolean isValidForTransfer(ValidationHandler handler) {
+		if (rows == null)
+		{
+			handler.validationFailed("Please select an input file.");
+			return false;
+		}
+		else if (convertedRows == null && !convertRows())
+		{
+			handler.validationFailed("The input file is not recognized. The following columns must be present: projectid, sourcepath, filename.");			
+			return false;
+		}
+		else if (s3Destination == null && folderDestination == null)
+		{
+			handler.validationFailed("Please select a destination.");			
+			return false;
+		}
+		return true;
+	}
+
+	private boolean convertRows() {
+		try {
+			convertedRows = importer.convertRows(rows);
+			return true;
+		} catch (SpreadsheetImportException e) {
+			return false;
+		}
+	}
+
+	public void beginTransfer(ProgresssHandler progress, FileTransferUpdateHandler updateHandler) {
+		new Thread(() ->
+		{
+			AtomicInteger count = new AtomicInteger(0);
+			if (folderDestination != null)
+			{
+				transferer.beginLocalTransfer(convertedRows, folderDestination, (update) -> 
+					shell.getDisplay().asyncExec(() -> {
+						float ratio = ((float)count.incrementAndGet()) / convertedRows.size();
+						progress.updateProgress(ratio, count.get() == convertedRows.size());
+						updateHandler.notifyFileTransfer(update);
+					})
+				);
+			}
+			else
+			{
+				transferer.beginRemoteTransfer(convertedRows, s3Destination, (update) ->
+					shell.getDisplay().asyncExec(() -> {
+						float ratio = ((float)count.incrementAndGet()) / convertedRows.size();
+						progress.updateProgress(ratio, count.get() == convertedRows.size());
+						updateHandler.notifyFileTransfer(update);
+					})
+				);
+			}
+		}).start();
+	}
+
+}
