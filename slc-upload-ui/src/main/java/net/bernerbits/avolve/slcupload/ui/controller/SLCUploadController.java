@@ -2,12 +2,14 @@ package net.bernerbits.avolve.slcupload.ui.controller;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.prefs.Preferences;
 
 import net.bernerbits.avolve.slcupload.FileTransferer;
 import net.bernerbits.avolve.slcupload.S3Connection;
 import net.bernerbits.avolve.slcupload.S3Connector;
 import net.bernerbits.avolve.slcupload.dataimport.SpreadsheetImporter;
 import net.bernerbits.avolve.slcupload.dataimport.exception.SpreadsheetImportException;
+import net.bernerbits.avolve.slcupload.dataimport.handler.ErrorHandler;
 import net.bernerbits.avolve.slcupload.dataimport.model.SpreadsheetRow;
 import net.bernerbits.avolve.slcupload.model.FileTransferObject;
 import net.bernerbits.avolve.slcupload.model.RemoteFolder;
@@ -17,6 +19,7 @@ import net.bernerbits.avolve.slcupload.ui.handler.ConnectionCheckHandler;
 import net.bernerbits.avolve.slcupload.ui.handler.FileSelectedHandler;
 import net.bernerbits.avolve.slcupload.ui.handler.FileTransferUpdateHandler;
 import net.bernerbits.avolve.slcupload.ui.handler.ProgresssHandler;
+import net.bernerbits.avolve.slcupload.ui.handler.StartConversionHandler;
 import net.bernerbits.avolve.slcupload.ui.handler.ValidationHandler;
 
 import org.eclipse.swt.SWT;
@@ -34,12 +37,14 @@ public class SLCUploadController {
 
 	private final FileTransferer transferer;
 
+	private String folderSource;
+
 	private RemoteFolder s3Destination;
 	private String folderDestination;
+	
 	private Iterable<SpreadsheetRow> rows;
 
 	private List<FileTransferObject> convertedRows;
-
 	
 	public SLCUploadController(Shell shell) {
 		this.shell = shell;
@@ -76,15 +81,34 @@ public class SLCUploadController {
 		if (platform.equals("win32") || platform.equals("wpf")) {
 			filterPath = "c:\\";
 		}
+		filterPath = Preferences.userNodeForPackage(getClass()).get("lastDestFolder", filterPath);
 		fileDialog.setFilterPath(filterPath);
 		String fileSelected = fileDialog.open();
 		if (fileSelected != null) {
 			s3Destination = null;
 			folderDestination = fileSelected;
 			handler.fileSelected(fileSelected);
+			Preferences.userNodeForPackage(getClass()).put("lastDestFolder", fileSelected);
 		}
 	}
 
+	public void sourceFolderSearchRequested(FileSelectedHandler handler) {
+		DirectoryDialog fileDialog = new DirectoryDialog(shell, SWT.OPEN);
+		String filterPath = "/";
+		String platform = SWT.getPlatform();
+		if (platform.equals("win32") || platform.equals("wpf")) {
+			filterPath = "c:\\";
+		}
+		filterPath = Preferences.userNodeForPackage(getClass()).get("lastSourceFolder", filterPath);
+		fileDialog.setFilterPath(filterPath);
+		String fileSelected = fileDialog.open();
+		if (fileSelected != null) {
+			folderSource = fileSelected;
+			handler.fileSelected(fileSelected);
+			Preferences.userNodeForPackage(getClass()).put("lastSourceFolder", fileSelected);
+		}
+	}
+	
 	public void s3BucketSearchRequested(FileSelectedHandler handler) {
 		S3Dialog s3Dialog = new S3Dialog(this, shell, SWT.OPEN);
 		RemoteFolder locSelected = s3Dialog.open();
@@ -104,15 +128,20 @@ public class SLCUploadController {
 		connHandler.connectionCheckCompleted(connection != null);
 	}
 
-	public boolean isValidForTransfer(ValidationHandler handler) {
+	public boolean isValidForTransfer(ValidationHandler handler, ErrorHandler errorHandler, StartConversionHandler conversionHandler) {
 		if (rows == null)
 		{
 			handler.validationFailed("Please select an input file.");
 			return false;
 		}
-		else if (convertedRows == null && !convertRows())
+		else if (convertedRows == null && !convertRows(errorHandler, conversionHandler))
 		{
 			handler.validationFailed("The input file is not recognized. The following columns must be present: projectid, sourcepath, filename.");			
+			return false;
+		}
+		else if (folderSource == null) 
+		{
+			handler.validationFailed("Please select a source folder.");			
 			return false;
 		}
 		else if (s3Destination == null && folderDestination == null)
@@ -120,12 +149,17 @@ public class SLCUploadController {
 			handler.validationFailed("Please select a destination.");			
 			return false;
 		}
+		else if (folderDestination != null && folderSource.equalsIgnoreCase(folderDestination))
+		{
+			handler.validationFailed("Source and destination cannot be the same.");
+			return false;
+		}
 		return true;
 	}
 
-	private boolean convertRows() {
+	private boolean convertRows(ErrorHandler errorHandler, StartConversionHandler handler) {
 		try {
-			convertedRows = importer.convertRows(rows);
+			convertedRows = importer.convertRows(rows, errorHandler);
 			return true;
 		} catch (SpreadsheetImportException e) {
 			return false;
@@ -138,7 +172,7 @@ public class SLCUploadController {
 			AtomicInteger count = new AtomicInteger(0);
 			if (folderDestination != null)
 			{
-				transferer.beginLocalTransfer(convertedRows, folderDestination, (update) -> 
+				transferer.beginLocalTransfer(convertedRows, folderSource, folderDestination, (update) -> 
 					shell.getDisplay().asyncExec(() -> {
 						float ratio = ((float)count.incrementAndGet()) / convertedRows.size();
 						progress.updateProgress(ratio, count.get() == convertedRows.size());
@@ -148,7 +182,7 @@ public class SLCUploadController {
 			}
 			else
 			{
-				transferer.beginRemoteTransfer(convertedRows, s3Destination, (update) ->
+				transferer.beginRemoteTransfer(convertedRows, folderSource, s3Destination, (update) ->
 					shell.getDisplay().asyncExec(() -> {
 						float ratio = ((float)count.incrementAndGet()) / convertedRows.size();
 						progress.updateProgress(ratio, count.get() == convertedRows.size());

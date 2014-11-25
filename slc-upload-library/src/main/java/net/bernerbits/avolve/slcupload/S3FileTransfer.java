@@ -1,5 +1,6 @@
 package net.bernerbits.avolve.slcupload;
 
+import net.bernerbits.avolve.slcupload.exception.FileTransferException;
 import net.bernerbits.avolve.slcupload.model.FileTransferObject;
 
 import com.amazonaws.auth.AWSCredentials;
@@ -15,10 +16,9 @@ public class S3FileTransfer extends FileTransfer {
 	private String bucket;
 	private String prefix;
 
-	private String status;
-
-	public S3FileTransfer(AWSCredentials credentials, String bucket, String prefix, FileTransferObject transferObject) {
-		super(transferObject);
+	public S3FileTransfer(String folderSource, AWSCredentials credentials, String bucket, String prefix,
+			FileTransferObject transferObject) {
+		super(folderSource, transferObject);
 		this.credentials = credentials;
 		this.bucket = bucket;
 		this.prefix = prefix;
@@ -26,29 +26,28 @@ public class S3FileTransfer extends FileTransfer {
 	}
 
 	@Override
-	public String getDestination() {
+	public String getDestination() throws FileTransferException {
 		return bucket + "/" + prefix + (prefix.isEmpty() ? "" : "/") + getRemotePath();
 	}
 
 	@Override
-	public String getStatus() {
-		return status;
-	}
-
-	@Override
 	public void transfer() {
-		if (!getFile().exists()) {
-			status = "File does not exist";
-			return;
-		}
 		try {
-			getClient(credentials).putObject(bucket, prefix + (prefix.isEmpty() ? "" : "/") + getRemotePath(),
-					getFile());
-			status = "OK";
-		} catch (IllegalArgumentException e) {
-			status = "Input error: " + e.getMessage();
-		} catch (AmazonS3Exception e) {
-			status = "Upload error: " + e.getMessage();
+			if (!getFile().exists()) {
+				status = "File does not exist";
+				return;
+			}
+			try {
+				getClient(credentials).putObject(bucket, prefix + (prefix.isEmpty() ? "" : "/") + getRemotePath(),
+						getFile());
+				status = "OK";
+			} catch (IllegalArgumentException e) {
+				status = "Input error: " + e.getMessage();
+			} catch (AmazonS3Exception e) {
+				status = "Upload error: " + e.getMessage();
+			}
+		} catch (FileTransferException e) {
+			status = e.getMessage();
 		}
 	}
 

@@ -20,7 +20,7 @@ launch4j {
 	headerType = 'gui'
 	launch4jCmd = 'C:\\Program Files (x86)\\Launch4j\\launch4j.exe'
     mainClassName = "net.bernerbits.avolve.slcupload.ui.SLCUploadUI"
-    bundledJrePath = System.properties['java.home']
+    bundledJrePath = 'jre8'
     maxHeapSize = 1536
 }
 

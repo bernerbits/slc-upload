@@ -1,17 +1,20 @@
 package net.bernerbits.avolve.slcupload.ui;
 
 import java.lang.reflect.InvocationTargetException;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
 
+import net.bernerbits.avolve.slcupload.ErrorFileTransfer;
 import net.bernerbits.avolve.slcupload.FileTransfer;
 import net.bernerbits.avolve.slcupload.dataimport.exception.FileExtensionNotRecognizedException;
 import net.bernerbits.avolve.slcupload.dataimport.exception.SpreadsheetFileNotFoundException;
 import net.bernerbits.avolve.slcupload.dataimport.model.SpreadsheetRow;
+import net.bernerbits.avolve.slcupload.exception.FileTransferException;
 import net.bernerbits.avolve.slcupload.ui.controller.SLCUploadController;
 
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -20,7 +23,6 @@ import org.eclipse.core.runtime.Status;
 import org.eclipse.jface.dialogs.ErrorDialog;
 import org.eclipse.jface.dialogs.ProgressMonitorDialog;
 import org.eclipse.jface.viewers.ArrayContentProvider;
-import org.eclipse.jface.viewers.CellLabelProvider;
 import org.eclipse.jface.viewers.ColumnLabelProvider;
 import org.eclipse.jface.viewers.TableViewer;
 import org.eclipse.jface.viewers.TableViewerColumn;
@@ -28,7 +30,6 @@ import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.graphics.Color;
-import org.eclipse.swt.graphics.RGB;
 import org.eclipse.swt.layout.FormAttachment;
 import org.eclipse.swt.layout.FormData;
 import org.eclipse.swt.layout.FormLayout;
@@ -38,11 +39,11 @@ import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.ProgressBar;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Table;
 import org.eclipse.swt.widgets.TableColumn;
 import org.eclipse.swt.widgets.Text;
-import org.eclipse.swt.widgets.ProgressBar;
 import org.eclipse.wb.swt.SWTResourceManager;
 
 public class SLCUploadShell extends Shell {
@@ -58,11 +59,15 @@ public class SLCUploadShell extends Shell {
 	private Group fileTransferGroup;
 
 	private Label lblValidationErrors;
+	private Label lblTransferResults;
 
 	private ProgressBar fileTransferProgress;
 
 	private Button btnStartTransfer;
 	private Button checkAutoScrollResults;
+	private Button checkErrorResultsOnly;
+
+	private Text inputLocationField;
 
 	public SLCUploadShell(Display display) {
 		super(display, SWT.SHELL_TRIM);
@@ -127,16 +132,57 @@ public class SLCUploadShell extends Shell {
 		fd_sheetPreviewTable.right = new FormAttachment(100, -10);
 		table.setLayoutData(fd_sheetPreviewTable);
 
+		Group grpTransferSource = new Group(this, SWT.NONE);
+		grpTransferSource.setText("File Source");
+		grpTransferSource.setLayout(new FormLayout());
+		FormData fd_grpTransferSource = new FormData();
+		fd_grpTransferSource.bottom = new FormAttachment(grpInputSource, 54, SWT.BOTTOM);
+		fd_grpTransferSource.top = new FormAttachment(grpInputSource, 6);
+		fd_grpTransferSource.right = new FormAttachment(grpInputSource, 0, SWT.RIGHT);
+		fd_grpTransferSource.left = new FormAttachment(0, 10);
+		grpTransferSource.setLayoutData(fd_grpTransferSource);
+
+		Button btnSrcFolder = new Button(grpTransferSource, SWT.NONE);
+		btnSrcFolder.addSelectionListener(new SelectionAdapter() {
+			@Override
+			public void widgetSelected(SelectionEvent e) {
+				slcUploadController.sourceFolderSearchRequested(SLCUploadShell.this::inputFolderSelected);
+			}
+		});
+
+		FormData fd_btnSrcFolder = new FormData();
+		fd_btnSrcFolder.top = new FormAttachment(0, 4);
+		fd_btnSrcFolder.right = new FormAttachment(100, -4);
+		btnSrcFolder.setLayoutData(fd_btnSrcFolder);
+		btnSrcFolder.setText("Folder...");
+
+		Label lblSrcLocation = new Label(grpTransferSource, SWT.NONE);
+		FormData fd_lblSrcLocation = new FormData();
+		fd_lblSrcLocation.left = new FormAttachment(0, 7);
+		lblSrcLocation.setLayoutData(fd_lblSrcLocation);
+		lblSrcLocation.setText("Location:");
+
+		inputLocationField = new Text(grpTransferSource, SWT.BORDER);
+		FormData fd_text_2 = new FormData();
+		fd_text_2.right = new FormAttachment(btnSrcFolder, -6);
+		fd_text_2.top = new FormAttachment(0, 5);
+		fd_text_2.left = new FormAttachment(lblSrcLocation, 6);
+		inputLocationField.setLayoutData(fd_text_2);
+		inputLocationField.setEditable(false);
+
+		fd_lblSrcLocation.bottom = new FormAttachment(inputLocationField, 0, SWT.BOTTOM);
+		fd_lblSrcLocation.top = new FormAttachment(inputLocationField, 0, SWT.TOP);
+
 		Group grpTransferDestination = new Group(this, SWT.NONE);
 		grpTransferDestination.setText("Transfer Destination");
 		grpTransferDestination.setLayout(new FormLayout());
 		FormData fd_grpTransferDestination = new FormData();
-		fd_grpTransferDestination.bottom = new FormAttachment(grpInputSource, 54, SWT.BOTTOM);
-		fd_grpTransferDestination.top = new FormAttachment(grpInputSource, 6);
+		fd_grpTransferDestination.bottom = new FormAttachment(grpTransferSource, 54, SWT.BOTTOM);
+		fd_grpTransferDestination.top = new FormAttachment(grpTransferSource, 6);
 		fd_grpTransferDestination.right = new FormAttachment(grpInputSource, 0, SWT.RIGHT);
 		fd_grpTransferDestination.left = new FormAttachment(0, 10);
 		grpTransferDestination.setLayoutData(fd_grpTransferDestination);
-		
+
 		Button btnFolder = new Button(grpTransferDestination, SWT.NONE);
 		btnFolder.addSelectionListener(new SelectionAdapter() {
 			@Override
@@ -159,27 +205,27 @@ public class SLCUploadShell extends Shell {
 		fd_btnFolder.right = new FormAttachment(btnSBucket, -6);
 		FormData fd_btnSBucket = new FormData();
 		fd_btnSBucket.top = new FormAttachment(0, 3);
-		fd_btnSBucket.right = new FormAttachment(100, -10);
+		fd_btnSBucket.right = new FormAttachment(100, -5);
 		fd_btnSBucket.left = new FormAttachment(100, -82);
 		btnSBucket.setLayoutData(fd_btnSBucket);
 		btnSBucket.setText("S3 Bucket...");
 
 		Label lblLocation = new Label(grpTransferDestination, SWT.NONE);
 		FormData fd_lblLocation = new FormData();
-		fd_lblLocation.bottom = new FormAttachment(100, -22);
-		fd_lblLocation.top = new FormAttachment(0, 5);
 		fd_lblLocation.left = new FormAttachment(0, 7);
 		lblLocation.setLayoutData(fd_lblLocation);
 		lblLocation.setText("Location:");
 
 		outputLocationField = new Text(grpTransferDestination, SWT.BORDER);
-		fd_lblLocation.right = new FormAttachment(outputLocationField, -9);
 		FormData fd_text_1 = new FormData();
 		fd_text_1.right = new FormAttachment(btnFolder, -6);
 		fd_text_1.top = new FormAttachment(0, 5);
-		fd_text_1.left = new FormAttachment(0, 65);
+		fd_text_1.left = new FormAttachment(lblLocation, 6);
 		outputLocationField.setLayoutData(fd_text_1);
 		outputLocationField.setEditable(false);
+
+		fd_lblLocation.bottom = new FormAttachment(outputLocationField, 0, SWT.BOTTOM);
+		fd_lblLocation.top = new FormAttachment(outputLocationField, 0, SWT.TOP);
 
 		Label lblLocation_1 = new Label(grpTransferDestination, SWT.NONE);
 		FormData fd_lblLocation_1 = new FormData();
@@ -217,6 +263,28 @@ public class SLCUploadShell extends Shell {
 		fd_checkAutoScrollResults.right = new FormAttachment(100, -6);
 		checkAutoScrollResults.setLayoutData(fd_checkAutoScrollResults);
 		checkAutoScrollResults.pack();
+
+		checkErrorResultsOnly = new Button(fileTransferGroup, SWT.CHECK);
+		checkErrorResultsOnly.setText("Show only error results");
+		checkErrorResultsOnly.setSelection(false);
+		checkErrorResultsOnly.addSelectionListener(new SelectionAdapter() {
+			@Override
+			public void widgetSelected(SelectionEvent e) {
+				toggleErrorResults(checkErrorResultsOnly.getSelection());
+			}
+		});
+		FormData fd_checkErrorResultsOnly = new FormData();
+		fd_checkErrorResultsOnly.top = new FormAttachment(0, 6);
+		fd_checkErrorResultsOnly.right = new FormAttachment(checkAutoScrollResults, -6);
+		checkErrorResultsOnly.setLayoutData(fd_checkErrorResultsOnly);
+		checkErrorResultsOnly.pack();
+
+		lblTransferResults = new Label(fileTransferGroup, SWT.NONE);
+		FormData fd_lblTransferResults = new FormData();
+		fd_lblTransferResults.top = new FormAttachment(0, 6);
+		fd_lblTransferResults.left = new FormAttachment(0, 5);
+		fd_lblTransferResults.right = new FormAttachment(checkErrorResultsOnly, -5);
+		lblTransferResults.setLayoutData(fd_lblTransferResults);
 		
 		btnStartTransfer = new Button(fileTransferGroup, SWT.NONE);
 		btnStartTransfer.addSelectionListener(new SelectionAdapter() {
@@ -224,6 +292,13 @@ public class SLCUploadShell extends Shell {
 			public void widgetSelected(SelectionEvent e) {
 				btnStartTransfer.setEnabled(false);
 				transferResultsTable.getTable().removeAll();
+				transferResults.clear();
+				errorTransferResults.clear();
+				lblTransferResults.setText("");
+				for(FileTransfer transfer : conversionResults)
+				{
+					fileTransferUpdate(transfer);
+				}
 				slcUploadController.beginTransfer(SLCUploadShell.this::updateProgress,
 						SLCUploadShell.this::fileTransferUpdate);
 			}
@@ -280,9 +355,26 @@ public class SLCUploadShell extends Shell {
 		localFileColumn.getColumn().setMoveable(false);
 		localFileColumn.getColumn().pack();
 		localFileColumn.setLabelProvider(new ColumnLabelProvider() {
+			private boolean error = false;
+
 			@Override
 			public String getText(Object element) {
-				return ((FileTransfer) element).getFile().getAbsolutePath();
+				try {
+					error = false;
+					return ((FileTransfer) element).getFile().getAbsolutePath();
+				} catch (FileTransferException e) {
+					error = true;
+					return ((FileTransfer) element).getTransferObject().getSourcePath();
+				}
+			}
+
+			@Override
+			public Color getForeground(Object element) {
+				if (!error) {
+					return SWTResourceManager.getColor(SWT.COLOR_WIDGET_FOREGROUND);
+				} else {
+					return SWTResourceManager.getColor(SWT.COLOR_RED);
+				}
 			}
 		});
 
@@ -294,7 +386,11 @@ public class SLCUploadShell extends Shell {
 		remotePathColumn.setLabelProvider(new ColumnLabelProvider() {
 			@Override
 			public String getText(Object element) {
-				return ((FileTransfer) element).getDestination();
+				try {
+					return ((FileTransfer) element).getDestination();
+				} catch (FileTransferException e) {
+					return "";
+				}
 			}
 		});
 
@@ -439,6 +535,11 @@ public class SLCUploadShell extends Shell {
 		checkValidForTransfer();
 	}
 
+	private void inputFolderSelected(String folderPath) {
+		inputLocationField.setText("Folder: " + folderPath);
+		checkValidForTransfer();
+	}
+
 	private void outputFolderSelected(String folderPath) {
 		outputLocationField.setText("Folder: " + folderPath);
 		checkValidForTransfer();
@@ -450,7 +551,7 @@ public class SLCUploadShell extends Shell {
 	}
 
 	private void checkValidForTransfer() {
-		boolean valid = slcUploadController.isValidForTransfer(this::setValidationMessage);
+		boolean valid = slcUploadController.isValidForTransfer(this::setValidationMessage, this::handleConversionError, this::conversionStarted);
 		lblValidationErrors.setVisible(!valid);
 		recursiveSetEnabled(fileTransferGroup, valid);
 	}
@@ -462,6 +563,17 @@ public class SLCUploadShell extends Shell {
 				recursiveSetEnabled(c, enabled);
 		}
 		ctrl.setEnabled(enabled);
+	}
+	
+	private void conversionStarted()
+	{
+		conversionResults.clear();
+	}
+
+	private void handleConversionError(String message, String detail)
+	{
+		ErrorFileTransfer eft = new ErrorFileTransfer(message, detail);
+		conversionResults.add(eft);
 	}
 
 	private void setValidationMessage(String message) {
@@ -475,26 +587,51 @@ public class SLCUploadShell extends Shell {
 		fileTransferProgress.setSelection((int) Math.round(progress * fileTransferProgress.getMaximum()));
 		if (complete) {
 			fileTransferProgress.setSelection(0);
+			lblTransferResults.setText("Transfer complete! " + (transferResults.size() - errorTransferResults.size())
+					+ " File(s) Copied, " + errorTransferResults.size() + " Errors.");
 		}
 	}
 
 	private long lastPackTime = 0;
-	
-	private void fileTransferUpdate(FileTransfer transfer) {
-		transferResultsTable.add(transfer);
-		if (checkAutoScrollResults.getSelection())
-		{
-			transferResultsTable.getTable().setSelection(transferResultsTable.getTable().getItems().length - 1);
-			transferResultsTable.getTable().showSelection();
+
+	private List<FileTransfer> conversionResults = new ArrayList<>();
+	private List<FileTransfer> transferResults = new ArrayList<>();
+	private List<FileTransfer> errorTransferResults = new ArrayList<>();
+
+	private void toggleErrorResults(boolean errorResultsOnly) {
+		transferResultsTable.getTable().removeAll();
+		if (errorResultsOnly) {
+			transferResultsTable.add(errorTransferResults.toArray(new FileTransfer[0]));
+		} else {
+			transferResultsTable.add(transferResults.toArray(new FileTransfer[0]));
 		}
-		
-		long currentTime = System.currentTimeMillis();
-		if(currentTime - lastPackTime > 5000)
-		{
-			for (TableColumn column : transferResultsTable.getTable().getColumns()) {
-				column.pack();
+		packTransferResultColumns();
+	}
+
+	private void packTransferResultColumns() {
+		for (TableColumn column : transferResultsTable.getTable().getColumns()) {
+			column.pack();
+		}
+	}
+
+	private void fileTransferUpdate(FileTransfer transfer) {
+		transferResults.add(transfer);
+		boolean errorResult = !(transfer.getStatus().equals("OK"));
+		if (errorResult || !checkErrorResultsOnly.getSelection()) {
+			if (errorResult) {
+				errorTransferResults.add(transfer);
 			}
-			lastPackTime = currentTime;
+			transferResultsTable.add(transfer);
+			if (checkAutoScrollResults.getSelection()) {
+				transferResultsTable.getTable().setSelection(transferResultsTable.getTable().getItems().length - 1);
+				transferResultsTable.getTable().showSelection();
+			}
+	
+			long currentTime = System.currentTimeMillis();
+			if (currentTime - lastPackTime > 5000) {
+				packTransferResultColumns();
+				lastPackTime = currentTime;
+			}
 		}
 	}
 }

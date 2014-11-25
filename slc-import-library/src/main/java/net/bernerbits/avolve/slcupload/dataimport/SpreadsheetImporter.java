@@ -12,6 +12,7 @@ import net.bernerbits.avolve.slcupload.dataimport.exception.FileExtensionNotReco
 import net.bernerbits.avolve.slcupload.dataimport.exception.InvalidFormatSpreadsheetException;
 import net.bernerbits.avolve.slcupload.dataimport.exception.SpreadsheetFileNotFoundException;
 import net.bernerbits.avolve.slcupload.dataimport.exception.SpreadsheetImportException;
+import net.bernerbits.avolve.slcupload.dataimport.handler.ErrorHandler;
 import net.bernerbits.avolve.slcupload.dataimport.model.SpreadsheetRow;
 import net.bernerbits.avolve.slcupload.model.FileTransferObject;
 
@@ -46,7 +47,7 @@ public class SpreadsheetImporter {
 		this.importers = importers;
 	}
 
-	public List<FileTransferObject> convertRows(Iterable<SpreadsheetRow> rows) throws SpreadsheetImportException {
+	public List<FileTransferObject> convertRows(Iterable<SpreadsheetRow> rows, ErrorHandler errorHandler) throws SpreadsheetImportException {
 		Iterator<SpreadsheetRow> it = rows.iterator();
 		SpreadsheetRow headerRow = it.next();
 		
@@ -71,10 +72,13 @@ public class SpreadsheetImporter {
 			{
 				transferObjects.add(new FileTransferObject(projectId, sourcePath, fileName));
 			}
+			else if (!fileName.isEmpty())
+			{
+				errorHandler.handleError("Missing projectID or sourcePath",fileName);
+			}
 			else
 			{
-				// TODO Keep this in a log somewhere.
-				System.err.println("Incomplete Row: " + Arrays.toString(row.getValues()));
+				errorHandler.handleError("Incomplete row",Arrays.toString(row.getValues()));
 			}
 		}
 		return transferObjects;

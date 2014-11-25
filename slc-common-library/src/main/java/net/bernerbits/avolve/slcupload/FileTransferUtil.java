@@ -2,24 +2,30 @@ package net.bernerbits.avolve.slcupload;
 
 import java.io.File;
 
+import net.bernerbits.avolve.slcupload.exception.FileTransferException;
 import net.bernerbits.avolve.slcupload.model.FileTransferObject;
 
 public class FileTransferUtil {
-	private static <T> T echo(String name, T object) {
-		System.out.println(name + "=" + object);
-		return object;
-	}
-
-	public synchronized static File getLatestFile(FileTransferObject transferObject) {
+	public synchronized static File getLatestFile(String folderSource, FileTransferObject transferObject)
+			throws FileTransferException {
 		String sourcePath = transferObject.getSourcePath();
+		sourcePath = sourcePath.replace('\\', '/');
+		int projectIdLocation = sourcePath.indexOf("/" + transferObject.getProjectId() + "/");
+		if (projectIdLocation == -1) {
+			throw new FileTransferException("Project Id (" + transferObject.getProjectId() + ") is not part of the file path.");
+		}
+		sourcePath = sourcePath.substring(projectIdLocation).replace('/', File.separatorChar);
 
-		File firstVersion = new File(sourcePath);
+		File firstVersion = new File(folderSource + sourcePath);
 
-		if (firstVersion.getParentFile() == null) {
-			System.out.println(firstVersion.getAbsolutePath());
+		// Sourcepath is for a versioned file
+		if (firstVersion.getParentFile().getName().equals(transferObject.getFileName())
+				&& firstVersion.getName().startsWith(transferObject.getFileName())) {
+			firstVersion = firstVersion.getParentFile();
 		}
 
-		File[] versions = firstVersion.listFiles((f, n) -> n.matches(transferObject.getFileName() + "_V\\d+"));
+		File[] versions = firstVersion.listFiles((f, n) -> n.startsWith(transferObject.getFileName())
+				&& n.matches(".*_V\\d+"));
 
 		int latestVersion = 1;
 		File latestFile = firstVersion;
@@ -37,8 +43,9 @@ public class FileTransferUtil {
 		return new File(latestFile, transferObject.getFileName());
 	}
 
-	public static String getRemotePath(FileTransferObject transferObject) {
-		File f = getLatestFile(transferObject);
+	public static String getRemotePath(String folderSource, FileTransferObject transferObject)
+			throws FileTransferException {
+		File f = getLatestFile(folderSource, transferObject);
 		String path = f.getAbsolutePath().replace('\\', '/');
 		path = path.substring(path.indexOf("/" + transferObject.getProjectId() + "/") + 1);
 		return path;
