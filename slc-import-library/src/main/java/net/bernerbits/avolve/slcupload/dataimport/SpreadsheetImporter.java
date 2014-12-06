@@ -3,6 +3,7 @@ package net.bernerbits.avolve.slcupload.dataimport;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -49,6 +50,11 @@ public class SpreadsheetImporter {
 
 	public List<FileTransferObject> convertRows(Iterable<SpreadsheetRow> rows, ErrorHandler errorHandler) throws SpreadsheetImportException {
 		Iterator<SpreadsheetRow> it = rows.iterator();
+		if(!it.hasNext())
+		{
+			return Collections.<FileTransferObject>emptyList();
+		}
+		
 		SpreadsheetRow headerRow = it.next();
 		
 		int projectIdCol = headerRow.find("projectid");

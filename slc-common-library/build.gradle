@@ -10,6 +10,7 @@ repositories {
 
 dependencies {
 	compile 'commons-io:commons-io:2.4'
+	compile 'org.swinglabs:swingx:1.6.1'
 }
 
 test {

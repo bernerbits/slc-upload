@@ -1,27 +1,28 @@
 package net.bernerbits.avolve.slcupload;
 
-import java.io.File;
+import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import net.bernerbits.avolve.slcupload.exception.FileTransferException;
 import net.bernerbits.avolve.slcupload.model.FileTransferObject;
 
 public abstract class FileTransfer {
-	
-	private final FileTransferObject transferObject;
-	private final String folderSource;
+
+	private final AtomicInteger duplicateCount = new AtomicInteger(0);
 	protected String status = "";
 
-	public FileTransfer(String folderSource, FileTransferObject transferObject) {
-		this.folderSource = folderSource;
-		this.transferObject = transferObject;
+	public FileTransfer() {
 	}
 
-	public File getFile() throws FileTransferException {
-		return FileTransferUtil.getLatestFile(folderSource, transferObject);
+	public boolean isDuplicate() {
+		return false;
 	}
 
-	protected String getRemotePath() throws FileTransferException {
-		return FileTransferUtil.getRemotePath(folderSource, transferObject);
+	public int getDuplicateCount() {
+		return duplicateCount.get();
+	}
+
+	public final void addDuplicate() {
+		duplicateCount.incrementAndGet();
 	}
 	
 	public final String getStatus()
@@ -29,12 +30,10 @@ public abstract class FileTransfer {
 		return status;
 	}
 
-	public FileTransferObject getTransferObject() {
-		return transferObject;
-	}
+	public abstract String getPathAsString();
 
-	public abstract String getDestination() throws FileTransferException;
+	public abstract FileTransferObject getTransferObject();
 
-	public abstract void transfer();
-	
+	public abstract String getDestination();
+
 }

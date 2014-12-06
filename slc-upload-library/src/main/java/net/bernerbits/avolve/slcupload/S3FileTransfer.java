@@ -1,13 +1,16 @@
 package net.bernerbits.avolve.slcupload;
 
+import java.nio.file.Files;
+
 import net.bernerbits.avolve.slcupload.exception.FileTransferException;
+import net.bernerbits.avolve.slcupload.exception.FileTransferMissingFileException;
 import net.bernerbits.avolve.slcupload.model.FileTransferObject;
 
 import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.model.AmazonS3Exception;
 
-public class S3FileTransfer extends FileTransfer {
+public class S3FileTransfer extends RealFileTransfer {
 
 	private static ThreadLocal<AWSCredentials> creds = new ThreadLocal<>();
 	private static ThreadLocal<AmazonS3Client> client = new ThreadLocal<>();
@@ -17,7 +20,7 @@ public class S3FileTransfer extends FileTransfer {
 	private String prefix;
 
 	public S3FileTransfer(String folderSource, AWSCredentials credentials, String bucket, String prefix,
-			FileTransferObject transferObject) {
+			FileTransferObject transferObject) throws FileTransferException {
 		super(folderSource, transferObject);
 		this.credentials = credentials;
 		this.bucket = bucket;
@@ -26,28 +29,24 @@ public class S3FileTransfer extends FileTransfer {
 	}
 
 	@Override
-	public String getDestination() throws FileTransferException {
+	public String calculateDestination() {
 		return bucket + "/" + prefix + (prefix.isEmpty() ? "" : "/") + getRemotePath();
 	}
 
 	@Override
 	public void transfer() {
+		if (!Files.exists(getPath())) {
+			status = "File does not exist";
+			return;
+		}
 		try {
-			if (!getFile().exists()) {
-				status = "File does not exist";
-				return;
-			}
-			try {
-				getClient(credentials).putObject(bucket, prefix + (prefix.isEmpty() ? "" : "/") + getRemotePath(),
-						getFile());
-				status = "OK";
-			} catch (IllegalArgumentException e) {
-				status = "Input error: " + e.getMessage();
-			} catch (AmazonS3Exception e) {
-				status = "Upload error: " + e.getMessage();
-			}
-		} catch (FileTransferException e) {
-			status = e.getMessage();
+			getClient(credentials).putObject(bucket, prefix + (prefix.isEmpty() ? "" : "/") + getRemotePath(),
+					getPath().toFile());
+			status = "OK";
+		} catch (IllegalArgumentException e) {
+			status = "Input error: " + e.getMessage();
+		} catch (AmazonS3Exception e) {
+			status = "Upload error: " + e.getMessage();
 		}
 	}
 
@@ -57,6 +56,17 @@ public class S3FileTransfer extends FileTransfer {
 			client.set(new AmazonS3Client(credentials));
 		}
 		return client.get();
+	}
+
+	public static FileTransfer create(String folderSource, AWSCredentials credentials, String bucket, String prefix,
+			FileTransferObject transferObject) {
+		try {
+			return new S3FileTransfer(folderSource, credentials, bucket, prefix, transferObject);
+		} catch (FileTransferMissingFileException e) {
+			return new ErrorFileTransfer(e.getMessage(), e.getPath());
+		} catch (FileTransferException e) {
+			return new ErrorFileTransfer(e.getMessage(), transferObject.getSourcePath());
+		}
 	}
 
 }

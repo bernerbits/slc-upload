@@ -1,11 +1,9 @@
 package net.bernerbits.avolve.slcupload.dataimport;
 
-import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.nio.charset.Charset;
-import java.util.ArrayList;
-import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Paths;
 
 import net.bernerbits.avolve.slcupload.dataimport.exception.SpreadsheetFileNotFoundException;
 import net.bernerbits.avolve.slcupload.dataimport.exception.SpreadsheetImportException;
@@ -15,20 +13,20 @@ import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
 
 public class CsvSpreadsheetImporter implements ISpreadsheetImporter {
 
 	@Override
 	public Iterable<SpreadsheetRow> importSpreadsheet(String fileName) throws SpreadsheetImportException {
 		try {
-			CSVParser parser = CSVParser.parse(new File(fileName), Charset.forName("UTF-8"), CSVFormat.EXCEL);
-			return Iterables.transform(parser, (input) -> {
-				List<String> rowValues = new ArrayList<>();
-				for (int i = 0; i < input.size(); i++) {
-					rowValues.add(input.get(i));
-				}
-				return new SpreadsheetRow(rowValues.toArray(new String[0]));
-			});
+			CSVParser parser = CSVParser.parse(
+					Paths.get(fileName).toUri().toURL(), 
+					StandardCharsets.UTF_8,
+					CSVFormat.EXCEL.withIgnoreEmptyLines(true));
+
+			return Lists.newArrayList(Iterables.transform(parser,
+					(input) -> new SpreadsheetRow(Iterables.toArray(input, String.class))));
 		} catch (FileNotFoundException e) {
 			throw new SpreadsheetFileNotFoundException(e.getMessage());
 		} catch (IOException e) {

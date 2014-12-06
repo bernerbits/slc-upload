@@ -2,8 +2,10 @@ package net.bernerbits.avolve.slcupload.ui;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
@@ -14,7 +16,6 @@ import net.bernerbits.avolve.slcupload.FileTransfer;
 import net.bernerbits.avolve.slcupload.dataimport.exception.FileExtensionNotRecognizedException;
 import net.bernerbits.avolve.slcupload.dataimport.exception.SpreadsheetFileNotFoundException;
 import net.bernerbits.avolve.slcupload.dataimport.model.SpreadsheetRow;
-import net.bernerbits.avolve.slcupload.exception.FileTransferException;
 import net.bernerbits.avolve.slcupload.ui.controller.SLCUploadController;
 
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -285,7 +286,7 @@ public class SLCUploadShell extends Shell {
 		fd_lblTransferResults.left = new FormAttachment(0, 5);
 		fd_lblTransferResults.right = new FormAttachment(checkErrorResultsOnly, -5);
 		lblTransferResults.setLayoutData(fd_lblTransferResults);
-		
+
 		btnStartTransfer = new Button(fileTransferGroup, SWT.NONE);
 		btnStartTransfer.addSelectionListener(new SelectionAdapter() {
 			@Override
@@ -293,10 +294,11 @@ public class SLCUploadShell extends Shell {
 				btnStartTransfer.setEnabled(false);
 				transferResultsTable.getTable().removeAll();
 				transferResults.clear();
+				duplicateResults.clear();
+				transfersByPath.clear();
 				errorTransferResults.clear();
 				lblTransferResults.setText("");
-				for(FileTransfer transfer : conversionResults)
-				{
+				for (FileTransfer transfer : conversionResults) {
 					fileTransferUpdate(transfer);
 				}
 				slcUploadController.beginTransfer(SLCUploadShell.this::updateProgress,
@@ -349,6 +351,28 @@ public class SLCUploadShell extends Shell {
 			}
 		});
 
+		TableViewerColumn duplicateColumn = new TableViewerColumn(transferResultsTable, SWT.NONE);
+		duplicateColumn.getColumn().setText("Dup");
+		duplicateColumn.getColumn().setResizable(true);
+		duplicateColumn.getColumn().setMoveable(false);
+		duplicateColumn.getColumn().pack();
+		duplicateColumn.setLabelProvider(new ColumnLabelProvider() {
+			@Override
+			public String getText(Object element) {
+				int duplicates = ((FileTransfer) element).getDuplicateCount();
+				return duplicates == 0 ? "" : Integer.toString(duplicates);
+			}
+
+			@Override
+			public Color getForeground(Object element) {
+				if (((FileTransfer) element).getStatus().toUpperCase().equals("OK")) {
+					return SWTResourceManager.getColor(SWT.COLOR_DARK_GREEN);
+				} else {
+					return SWTResourceManager.getColor(SWT.COLOR_RED);
+				}
+			}
+		});
+
 		TableViewerColumn localFileColumn = new TableViewerColumn(transferResultsTable, SWT.NONE);
 		localFileColumn.getColumn().setText("Local path");
 		localFileColumn.getColumn().setResizable(true);
@@ -359,13 +383,8 @@ public class SLCUploadShell extends Shell {
 
 			@Override
 			public String getText(Object element) {
-				try {
-					error = false;
-					return ((FileTransfer) element).getFile().getAbsolutePath();
-				} catch (FileTransferException e) {
-					error = true;
-					return ((FileTransfer) element).getTransferObject().getSourcePath();
-				}
+				error = false;
+				return ((FileTransfer) element).getPathAsString();
 			}
 
 			@Override
@@ -386,11 +405,7 @@ public class SLCUploadShell extends Shell {
 		remotePathColumn.setLabelProvider(new ColumnLabelProvider() {
 			@Override
 			public String getText(Object element) {
-				try {
-					return ((FileTransfer) element).getDestination();
-				} catch (FileTransferException e) {
-					return "";
-				}
+				return ((FileTransfer) element).getDestination();
 			}
 		});
 
@@ -551,7 +566,8 @@ public class SLCUploadShell extends Shell {
 	}
 
 	private void checkValidForTransfer() {
-		boolean valid = slcUploadController.isValidForTransfer(this::setValidationMessage, this::handleConversionError, this::conversionStarted);
+		boolean valid = slcUploadController.isValidForTransfer(this::setValidationMessage, this::handleConversionError,
+				this::conversionStarted);
 		lblValidationErrors.setVisible(!valid);
 		recursiveSetEnabled(fileTransferGroup, valid);
 	}
@@ -564,14 +580,12 @@ public class SLCUploadShell extends Shell {
 		}
 		ctrl.setEnabled(enabled);
 	}
-	
-	private void conversionStarted()
-	{
+
+	private void conversionStarted() {
 		conversionResults.clear();
 	}
 
-	private void handleConversionError(String message, String detail)
-	{
+	private void handleConversionError(String message, String detail) {
 		ErrorFileTransfer eft = new ErrorFileTransfer(message, detail);
 		conversionResults.add(eft);
 	}
@@ -587,8 +601,8 @@ public class SLCUploadShell extends Shell {
 		fileTransferProgress.setSelection((int) Math.round(progress * fileTransferProgress.getMaximum()));
 		if (complete) {
 			fileTransferProgress.setSelection(0);
-			lblTransferResults.setText("Transfer complete! " + (transferResults.size() - errorTransferResults.size())
-					+ " File(s) Copied, " + errorTransferResults.size() + " Errors.");
+			lblTransferResults.setText("Transfer complete! " + (transferResults.size() - errorTransferResults.size() - duplicateResults.size())
+					+ " File(s) Copied, " + duplicateResults.size() + " Duplicates, " + errorTransferResults.size() + " Errors.");
 		}
 	}
 
@@ -596,7 +610,9 @@ public class SLCUploadShell extends Shell {
 
 	private List<FileTransfer> conversionResults = new ArrayList<>();
 	private List<FileTransfer> transferResults = new ArrayList<>();
+	private List<FileTransfer> duplicateResults = new ArrayList<>();
 	private List<FileTransfer> errorTransferResults = new ArrayList<>();
+	private Map<String, FileTransfer> transfersByPath = new HashMap<>();
 
 	private void toggleErrorResults(boolean errorResultsOnly) {
 		transferResultsTable.getTable().removeAll();
@@ -615,23 +631,32 @@ public class SLCUploadShell extends Shell {
 	}
 
 	private void fileTransferUpdate(FileTransfer transfer) {
-		transferResults.add(transfer);
-		boolean errorResult = !(transfer.getStatus().equals("OK"));
-		if (errorResult || !checkErrorResultsOnly.getSelection()) {
-			if (errorResult) {
-				errorTransferResults.add(transfer);
+		if (transfer.isDuplicate()) {
+			FileTransfer originalTransfer = transfersByPath.get(transfer.getPathAsString());
+			originalTransfer.addDuplicate();
+			transferResultsTable.refresh(originalTransfer);
+			duplicateResults.add(transfer);
+		} else {
+			transferResults.add(transfer);
+			boolean errorResult = !(transfer.getStatus().equals("OK"));
+			if (errorResult || !checkErrorResultsOnly.getSelection()) {
+				if (errorResult) {
+					errorTransferResults.add(transfer);
+				}
+				transferResultsTable.add(transfer);
+				if (checkAutoScrollResults.getSelection()) {
+					transferResultsTable.getTable().setSelection(transferResultsTable.getTable().getItems().length - 1);
+					transferResultsTable.getTable().showSelection();
+				}
+
+				long currentTime = System.currentTimeMillis();
+				if (currentTime - lastPackTime > 5000) {
+					packTransferResultColumns();
+					lastPackTime = currentTime;
+				}
 			}
-			transferResultsTable.add(transfer);
-			if (checkAutoScrollResults.getSelection()) {
-				transferResultsTable.getTable().setSelection(transferResultsTable.getTable().getItems().length - 1);
-				transferResultsTable.getTable().showSelection();
-			}
-	
-			long currentTime = System.currentTimeMillis();
-			if (currentTime - lastPackTime > 5000) {
-				packTransferResultColumns();
-				lastPackTime = currentTime;
-			}
+
+			transfersByPath.put(transfer.getPathAsString(), transfer);
 		}
 	}
 }

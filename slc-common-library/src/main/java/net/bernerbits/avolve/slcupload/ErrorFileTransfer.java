@@ -1,32 +1,30 @@
 package net.bernerbits.avolve.slcupload;
 
-import java.io.File;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 import net.bernerbits.avolve.slcupload.exception.FileTransferException;
 import net.bernerbits.avolve.slcupload.model.FileTransferObject;
 
-
 public class ErrorFileTransfer extends FileTransfer {
 
-	private String errorMessage;
 	private String file;
 
 	public ErrorFileTransfer(String errorMessage, String file) {
-		super(null, null);
-		this.errorMessage = errorMessage;
 		this.file = file;
 		status = errorMessage;
 	}
 
-	public File getFile() throws FileTransferException {
-		throw new FileTransferException(errorMessage);
+	@Override
+	public String getPathAsString() {
+		return file;
 	}
 
 	@Override
 	public FileTransferObject getTransferObject() {
 		return new FileTransferObject(null, file, file);
 	}
-	
+
 	@Override
 	public String getDestination() {
 		return "";
@@ -36,7 +34,4 @@ public class ErrorFileTransfer extends FileTransfer {
 		return file;
 	}
 
-	@Override
-	public void transfer() {
-	}
 }
