@@ -11,6 +11,10 @@ import java.nio.file.Paths;
 
 import org.apache.commons.io.FileExistsException;
 
+import com.google.common.hash.HashCode;
+import com.google.common.hash.HashFunction;
+import com.google.common.hash.Hashing;
+
 import net.bernerbits.avolve.slcupload.exception.FileTransferException;
 import net.bernerbits.avolve.slcupload.exception.FileTransferMissingFileException;
 import net.bernerbits.avolve.slcupload.model.FileTransferObject;
@@ -39,7 +43,15 @@ public class LocalFileTransfer extends RealFileTransfer {
 			Path dest = Paths.get(getDestination());
 			Files.createDirectories(dest.getParent());
 			Files.copy(getPath(), dest);
-			status = "OK";
+			
+			if(!verifyCopy(getPath(), dest))
+			{
+				status = "File was not copied correctly. Please try again.";
+			}
+			else
+			{
+				status = "\u2713";
+			}
 		} catch (FileExistsException | FileAlreadyExistsException e) {
 			status = "Skipped - File Exists";
 		} catch (FileSystemException e) {
@@ -47,6 +59,12 @@ public class LocalFileTransfer extends RealFileTransfer {
 		} catch (IOException e) {
 			status = "File could not be copied: " + e.getMessage();
 		}
+	}
+
+	private boolean verifyCopy(Path source, Path dest) throws IOException {
+		HashCode sourceMd5 = com.google.common.io.Files.hash(source.toFile(), Hashing.md5());
+		HashCode destMd5 = com.google.common.io.Files.hash(dest.toFile(), Hashing.md5());
+		return sourceMd5.equals(destMd5);
 	}
 
 	public static FileTransfer create(String folderSource, String localPath, FileTransferObject transferObject) {

@@ -343,7 +343,7 @@ public class SLCUploadShell extends Shell {
 
 			@Override
 			public Color getForeground(Object element) {
-				if (((FileTransfer) element).getStatus().toUpperCase().equals("OK")) {
+				if (((FileTransfer) element).getStatus().toUpperCase().equals("\u2713")) {
 					return SWTResourceManager.getColor(SWT.COLOR_DARK_GREEN);
 				} else {
 					return SWTResourceManager.getColor(SWT.COLOR_RED);

@@ -42,7 +42,7 @@ public class S3FileTransfer extends RealFileTransfer {
 		try {
 			getClient(credentials).putObject(bucket, prefix + (prefix.isEmpty() ? "" : "/") + getRemotePath(),
 					getPath().toFile());
-			status = "OK";
+			status = "\u2713";
 		} catch (IllegalArgumentException e) {
 			status = "Input error: " + e.getMessage();
 		} catch (AmazonS3Exception e) {
