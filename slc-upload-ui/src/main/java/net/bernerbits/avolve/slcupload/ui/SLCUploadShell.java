@@ -403,8 +403,8 @@ public class SLCUploadShell extends Shell {
 	 * Create contents of the shell.
 	 */
 	protected void createContents() {
-		setText("SLC Upload");
-		setSize(1032, 634);
+		setText("PlansAnywhere File Transport Manager");
+		setSize(1080, 700);
 
 	}
 
