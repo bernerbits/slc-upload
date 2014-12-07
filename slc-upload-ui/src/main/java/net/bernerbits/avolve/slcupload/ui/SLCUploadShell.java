@@ -48,6 +48,8 @@ import org.eclipse.swt.widgets.Text;
 import org.eclipse.wb.swt.SWTResourceManager;
 
 public class SLCUploadShell extends Shell {
+	private static final boolean S3_ENABLED = false;
+
 	private final SLCUploadController slcUploadController;
 
 	private int currentTasks = 0;
@@ -194,7 +196,7 @@ public class SLCUploadShell extends Shell {
 		FormData fd_btnFolder = new FormData();
 		btnFolder.setLayoutData(fd_btnFolder);
 		btnFolder.setText("Folder...");
-
+		
 		Button btnSBucket = new Button(grpTransferDestination, SWT.NONE);
 		btnSBucket.addSelectionListener(new SelectionAdapter() {
 			@Override
@@ -211,6 +213,11 @@ public class SLCUploadShell extends Shell {
 		btnSBucket.setLayoutData(fd_btnSBucket);
 		btnSBucket.setText("S3 Bucket...");
 
+		if (!S3_ENABLED)
+		{
+			fd_btnSBucket.left = new FormAttachment(100, 0);
+			btnSBucket.setVisible(false);
+		}
 		Label lblLocation = new Label(grpTransferDestination, SWT.NONE);
 		FormData fd_lblLocation = new FormData();
 		fd_lblLocation.left = new FormAttachment(0, 7);
