@@ -166,10 +166,12 @@ public class SLCUploadController {
 		}
 	}
 
+	private AtomicInteger count = new AtomicInteger(0);
+	
 	public void beginTransfer(ProgresssHandler progress, FileTransferUpdateHandler updateHandler) {
 		new Thread(() ->
 		{
-			AtomicInteger count = new AtomicInteger(0);
+			count.set(0);
 			if (folderDestination != null)
 			{
 				transferer.beginLocalTransfer(convertedRows, folderSource, folderDestination, (update) -> 
@@ -191,6 +193,14 @@ public class SLCUploadController {
 				);
 			}
 		}).start();
+	}
+
+	public int getTransferCount() {
+		return count.get();
+	}
+
+	public int getTotalCount() {
+		return convertedRows.size();
 	}
 
 }

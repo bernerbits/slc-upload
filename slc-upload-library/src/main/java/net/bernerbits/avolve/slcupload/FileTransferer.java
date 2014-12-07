@@ -20,7 +20,7 @@ public class FileTransferer {
 			String folderDestination, FileTransferCallback callback) {
 		Multiset<Path> pathCounts = ConcurrentHashMultiset.create();
 		transferObjects.parallelStream().map(localFileTransfer(folderSource, folderDestination))
-				.forEach(transfer(pathCounts, callback));
+				.forEachOrdered(transfer(pathCounts, callback));
 	}
 
 	public void beginRemoteTransfer(List<FileTransferObject> transferObjects, String folderSource,
@@ -29,7 +29,7 @@ public class FileTransferer {
 		Multiset<Path> pathCounts = HashMultiset.create();
 
 		transferObjects.parallelStream().map(remoteFileTransfer(folderSource, s3Folder))
-				.forEach(transfer(pathCounts, callback));
+				.forEachOrdered(transfer(pathCounts, callback));
 	}
 
 	private Function<FileTransferObject, FileTransfer> localFileTransfer(String folderSource, String folderDestination) {

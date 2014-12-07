@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import net.bernerbits.avolve.slcupload.ErrorFileTransfer;
@@ -21,6 +22,7 @@ import net.bernerbits.avolve.slcupload.ui.controller.SLCUploadController;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
+import org.eclipse.jface.action.StatusLineManager;
 import org.eclipse.jface.dialogs.ErrorDialog;
 import org.eclipse.jface.dialogs.ProgressMonitorDialog;
 import org.eclipse.jface.viewers.ArrayContentProvider;
@@ -47,6 +49,8 @@ import org.eclipse.swt.widgets.TableColumn;
 import org.eclipse.swt.widgets.Text;
 import org.eclipse.wb.swt.SWTResourceManager;
 
+import com.google.common.base.Stopwatch;
+
 public class SLCUploadShell extends Shell {
 	private static final boolean S3_ENABLED = false;
 
@@ -71,6 +75,10 @@ public class SLCUploadShell extends Shell {
 	private Button checkErrorResultsOnly;
 
 	private Text inputLocationField;
+
+	private Stopwatch transferStopwatch;
+
+	private StatusLineManager status;
 
 	public SLCUploadShell(Display display) {
 		super(display, SWT.SHELL_TRIM);
@@ -196,7 +204,7 @@ public class SLCUploadShell extends Shell {
 		FormData fd_btnFolder = new FormData();
 		btnFolder.setLayoutData(fd_btnFolder);
 		btnFolder.setText("Folder...");
-		
+
 		Button btnSBucket = new Button(grpTransferDestination, SWT.NONE);
 		btnSBucket.addSelectionListener(new SelectionAdapter() {
 			@Override
@@ -213,8 +221,7 @@ public class SLCUploadShell extends Shell {
 		btnSBucket.setLayoutData(fd_btnSBucket);
 		btnSBucket.setText("S3 Bucket...");
 
-		if (!S3_ENABLED)
-		{
+		if (!S3_ENABLED) {
 			fd_btnSBucket.left = new FormAttachment(100, 0);
 			btnSBucket.setVisible(false);
 		}
@@ -256,11 +263,19 @@ public class SLCUploadShell extends Shell {
 		lblValidationErrors.setLayoutData(fd_lblValidationErrors);
 		lblValidationErrors.setText("");
 
+		status = new StatusLineManager();
+		Control statusBar = status.createControl(this);
+		FormData fd_statusBar = new FormData();
+		fd_statusBar.left = new FormAttachment(0, 0);
+		fd_statusBar.right = new FormAttachment(100, 0);
+		fd_statusBar.bottom = new FormAttachment(100, 0);
+		statusBar.setLayoutData(fd_statusBar);
+
 		FormData fd_fileTransferGroup = new FormData();
 		fd_fileTransferGroup.top = new FormAttachment(lblValidationErrors, 5);
 		fd_fileTransferGroup.right = new FormAttachment(grpInputSource, 0, SWT.RIGHT);
 		fd_fileTransferGroup.left = new FormAttachment(0, 10);
-		fd_fileTransferGroup.bottom = new FormAttachment(100, -18);
+		fd_fileTransferGroup.bottom = new FormAttachment(statusBar, -5);
 		fileTransferGroup.setLayoutData(fd_fileTransferGroup);
 
 		checkAutoScrollResults = new Button(fileTransferGroup, SWT.CHECK);
@@ -296,6 +311,7 @@ public class SLCUploadShell extends Shell {
 
 		btnStartTransfer = new Button(fileTransferGroup, SWT.NONE);
 		btnStartTransfer.addSelectionListener(new SelectionAdapter() {
+
 			@Override
 			public void widgetSelected(SelectionEvent e) {
 				btnStartTransfer.setEnabled(false);
@@ -308,6 +324,8 @@ public class SLCUploadShell extends Shell {
 				for (FileTransfer transfer : conversionResults) {
 					fileTransferUpdate(transfer);
 				}
+				transferStopwatch = Stopwatch.createStarted();
+				status.setMessage("Starting transfer ...");
 				slcUploadController.beginTransfer(SLCUploadShell.this::updateProgress,
 						SLCUploadShell.this::fileTransferUpdate);
 			}
@@ -320,9 +338,9 @@ public class SLCUploadShell extends Shell {
 
 		fileTransferProgress = new ProgressBar(fileTransferGroup, SWT.SMOOTH);
 		FormData fd_progressBar = new FormData();
-		fd_progressBar.top = new FormAttachment(btnStartTransfer, 5, SWT.TOP);
-		fd_progressBar.left = new FormAttachment(0, 10);
-		fd_progressBar.right = new FormAttachment(btnStartTransfer, -10);
+		fd_progressBar.top = new FormAttachment(btnStartTransfer, 2, SWT.TOP);
+		fd_progressBar.right = new FormAttachment(btnStartTransfer, -15);
+		fd_progressBar.left = new FormAttachment(lblTransferResults, 0, SWT.LEFT);
 		fileTransferProgress.setLayoutData(fd_progressBar);
 
 		Table table2 = new Table(fileTransferGroup, SWT.BORDER | SWT.FULL_SELECTION);
@@ -369,15 +387,6 @@ public class SLCUploadShell extends Shell {
 				int duplicates = ((FileTransfer) element).getDuplicateCount();
 				return duplicates == 0 ? "" : Integer.toString(duplicates);
 			}
-
-			@Override
-			public Color getForeground(Object element) {
-				if (((FileTransfer) element).getStatus().toUpperCase().equals("OK")) {
-					return SWTResourceManager.getColor(SWT.COLOR_DARK_GREEN);
-				} else {
-					return SWTResourceManager.getColor(SWT.COLOR_RED);
-				}
-			}
 		});
 
 		TableViewerColumn localFileColumn = new TableViewerColumn(transferResultsTable, SWT.NONE);
@@ -386,21 +395,9 @@ public class SLCUploadShell extends Shell {
 		localFileColumn.getColumn().setMoveable(false);
 		localFileColumn.getColumn().pack();
 		localFileColumn.setLabelProvider(new ColumnLabelProvider() {
-			private boolean error = false;
-
 			@Override
 			public String getText(Object element) {
-				error = false;
 				return ((FileTransfer) element).getPathAsString();
-			}
-
-			@Override
-			public Color getForeground(Object element) {
-				if (!error) {
-					return SWTResourceManager.getColor(SWT.COLOR_WIDGET_FOREGROUND);
-				} else {
-					return SWTResourceManager.getColor(SWT.COLOR_RED);
-				}
 			}
 		});
 
@@ -606,10 +603,56 @@ public class SLCUploadShell extends Shell {
 		btnStartTransfer.setEnabled(complete);
 		fileTransferProgress.setEnabled(!complete);
 		fileTransferProgress.setSelection((int) Math.round(progress * fileTransferProgress.getMaximum()));
+
 		if (complete) {
+			transferStopwatch.stop();
 			fileTransferProgress.setSelection(0);
-			lblTransferResults.setText("Transfer complete! " + (transferResults.size() - errorTransferResults.size() - duplicateResults.size())
-					+ " File(s) Copied, " + duplicateResults.size() + " Duplicates, " + errorTransferResults.size() + " Errors.");
+			lblTransferResults.setText("Transfer complete! "
+					+ (transferResults.size() - errorTransferResults.size() - duplicateResults.size())
+					+ " File(s) Copied, " + duplicateResults.size() + " Duplicates, " + errorTransferResults.size()
+					+ " Errors.");
+			status.setMessage("Transfer complete");
+		} else {
+			String timeRemainingMsg;
+			if (progress > 0) {
+				double elapsedNanos = transferStopwatch.elapsed(TimeUnit.NANOSECONDS);
+				double totalEstNanos = elapsedNanos / progress;
+				double estNanosRemaining = totalEstNanos - elapsedNanos;
+
+				int secondsRemaining = (int) TimeUnit.SECONDS.convert((long) estNanosRemaining, TimeUnit.NANOSECONDS);
+
+				int minutesRemaining = secondsRemaining / 60;
+				secondsRemaining %= 60;
+
+				int hoursRemaining = minutesRemaining / 60;
+				minutesRemaining %= 60;
+
+				int daysRemaining = hoursRemaining / 24;
+				hoursRemaining %= 24;
+
+				int yearsRemaining = daysRemaining / 365;
+				daysRemaining %= 365;
+
+				if (yearsRemaining > 0) {
+					timeRemainingMsg = "About " + yearsRemaining + " years" + (yearsRemaining > 1 ? "s" : "");
+				} else if (daysRemaining > 0) {
+					timeRemainingMsg = "About " + daysRemaining + " day" + (daysRemaining > 1 ? "s" : "");
+				} else if (hoursRemaining > 0) {
+					timeRemainingMsg = String.format("About %d hour" + (hoursRemaining > 1 ? "s" : "") + " %d minute"
+							+ (minutesRemaining > 1 ? "s" : ""), hoursRemaining, minutesRemaining);
+				} else if (minutesRemaining > 0) {
+					timeRemainingMsg = String.format("About %d minute" + (minutesRemaining > 1 ? "s" : ""),
+							minutesRemaining);
+				} else if (secondsRemaining > 0) {
+					timeRemainingMsg = "About " + secondsRemaining + " second" + (secondsRemaining > 1 ? "s" : "");
+				} else {
+					timeRemainingMsg = "Almost done";
+				}
+			} else {
+				timeRemainingMsg = "Calculating...";
+			}
+			status.setMessage("Time Remaining: " + timeRemainingMsg + " (Transferring file "
+					+ slcUploadController.getTransferCount() + " of " + slcUploadController.getTotalCount() + ")");
 		}
 	}
 
@@ -645,7 +688,7 @@ public class SLCUploadShell extends Shell {
 			duplicateResults.add(transfer);
 		} else {
 			transferResults.add(transfer);
-			boolean errorResult = !(transfer.getStatus().equals("OK"));
+			boolean errorResult = !(transfer.getStatus().equals("\u2713"));
 			if (errorResult || !checkErrorResultsOnly.getSelection()) {
 				if (errorResult) {
 					errorTransferResults.add(transfer);
