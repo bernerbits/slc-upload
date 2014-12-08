@@ -19,7 +19,7 @@ public class FileTransferer {
 	public void beginLocalTransfer(List<FileTransferObject> transferObjects, String folderSource,
 			String folderDestination, FileTransferCallback callback) {
 		Multiset<Path> pathCounts = ConcurrentHashMultiset.create();
-		transferObjects.parallelStream().map(localFileTransfer(folderSource, folderDestination))
+		transferObjects.stream().map(localFileTransfer(folderSource, folderDestination))
 				.forEachOrdered(transfer(pathCounts, callback));
 	}
 
