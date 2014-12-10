@@ -17,6 +17,8 @@ import net.bernerbits.avolve.slcupload.dataimport.handler.ErrorHandler;
 import net.bernerbits.avolve.slcupload.dataimport.model.SpreadsheetRow;
 import net.bernerbits.avolve.slcupload.model.FileTransferObject;
 
+import com.google.common.base.Strings;
+
 public class SpreadsheetImporter {
 
 	private Map<String, ISpreadsheetImporter> importers = new HashMap<String, ISpreadsheetImporter>();
@@ -26,7 +28,7 @@ public class SpreadsheetImporter {
 		importers.put(".xls", new OldExcelSpreadsheetImporter());
 		importers.put(".xlsx", new ExcelSpreadsheetImporter());
 	}
-	
+
 	public Iterable<SpreadsheetRow> importSpreadsheet(String inputFile) throws SpreadsheetImportException {
 		if (!new File(inputFile).exists()) {
 			throw new SpreadsheetFileNotFoundException(inputFile);
@@ -48,43 +50,37 @@ public class SpreadsheetImporter {
 		this.importers = importers;
 	}
 
-	public List<FileTransferObject> convertRows(Iterable<SpreadsheetRow> rows, ErrorHandler errorHandler) throws SpreadsheetImportException {
+	public List<FileTransferObject> convertRows(Iterable<SpreadsheetRow> rows, ErrorHandler errorHandler)
+			throws SpreadsheetImportException {
 		Iterator<SpreadsheetRow> it = rows.iterator();
-		if(!it.hasNext())
-		{
-			return Collections.<FileTransferObject>emptyList();
+		if (!it.hasNext()) {
+			return Collections.<FileTransferObject> emptyList();
 		}
-		
+
 		SpreadsheetRow headerRow = it.next();
-		
+
 		int projectIdCol = headerRow.find("projectid");
 		int sourcePathCol = headerRow.find("sourcepath");
 		int fileNameCol = headerRow.find("filename");
-		
-		if (projectIdCol == -1 || sourcePathCol == -1 || fileNameCol == -1)
-		{
+
+		if (projectIdCol == -1 || sourcePathCol == -1 || fileNameCol == -1) {
 			throw new InvalidFormatSpreadsheetException();
 		}
-		
+
 		List<FileTransferObject> transferObjects = new ArrayList<>();
-		while(it.hasNext())
-		{
+		while (it.hasNext()) {
 			SpreadsheetRow row = it.next();
 			String projectId = row.getValues()[projectIdCol];
 			String sourcePath = row.getValues()[sourcePathCol];
 			String fileName = row.getValues()[fileNameCol];
 
-			if (!projectId.isEmpty() && !sourcePath.isEmpty() && !fileName.isEmpty())
-			{
+			if (!Strings.isNullOrEmpty(projectId) && !Strings.isNullOrEmpty(sourcePath)
+					&& !Strings.isNullOrEmpty(fileName)) {
 				transferObjects.add(new FileTransferObject(projectId, sourcePath, fileName));
-			}
-			else if (!fileName.isEmpty())
-			{
-				errorHandler.handleError("Missing projectID or sourcePath",fileName);
-			}
-			else
-			{
-				errorHandler.handleError("Incomplete row",Arrays.toString(row.getValues()));
+			} else if (!fileName.isEmpty()) {
+				errorHandler.handleError("Missing projectID or sourcePath", fileName);
+			} else {
+				errorHandler.handleError("Incomplete row", Arrays.toString(row.getValues()));
 			}
 		}
 		return transferObjects;

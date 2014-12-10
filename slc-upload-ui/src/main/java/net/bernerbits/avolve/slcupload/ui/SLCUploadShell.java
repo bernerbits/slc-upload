@@ -56,7 +56,7 @@ import org.eclipse.wb.swt.SWTResourceManager;
 import com.google.common.base.Stopwatch;
 
 public class SLCUploadShell extends Shell {
-	private static final boolean S3_ENABLED = false;
+	private static final boolean S3_ENABLED = true;
 
 	private final SLCUploadController slcUploadController;
 
