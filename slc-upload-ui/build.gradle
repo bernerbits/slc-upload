@@ -21,6 +21,7 @@ launch4j {
 	launch4jCmd = 'C:\\Program Files (x86)\\Launch4j\\launch4j.exe'
     mainClassName = "net.bernerbits.avolve.slcupload.ui.SLCUploadUI"
     outfile = 'pa-transport.exe'
+    icon = file('src/main/resources/ftm-export.ico')
     bundledJrePath = 'jre8'
     maxHeapSize = 1536
 }

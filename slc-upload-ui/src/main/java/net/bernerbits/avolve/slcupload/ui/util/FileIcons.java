@@ -1,8 +1,6 @@
 package net.bernerbits.avolve.slcupload.ui.util;
 
 import java.awt.Graphics2D;
-import java.awt.MediaTracker;
-import java.awt.Toolkit;
 import java.awt.image.BufferedImage;
 import java.awt.image.DirectColorModel;
 import java.awt.image.IndexColorModel;
@@ -14,14 +12,12 @@ import java.io.IOException;
 import java.io.StringReader;
 
 import javax.swing.ImageIcon;
-import javax.swing.JPanel;
 import javax.swing.filechooser.FileSystemView;
 
 import org.apache.batik.transcoder.Transcoder;
 import org.apache.batik.transcoder.TranscoderInput;
 import org.apache.batik.transcoder.TranscoderOutput;
 import org.apache.batik.transcoder.image.PNGTranscoder;
-import org.eclipse.swt.graphics.Device;
 import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.graphics.ImageData;
 import org.eclipse.swt.graphics.PaletteData;
@@ -141,7 +137,7 @@ public class FileIcons {
 		}
 
 		// Convert the byte stream into an image.
-		byte[] imgData = ostream.toByteArray();
+		byte[] imgData = ostream == null ? new byte[0] : ostream.toByteArray();
 
 		return new Image(Display.getCurrent(), new ImageData(new ByteArrayInputStream(imgData)));
 	}

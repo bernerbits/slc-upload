@@ -21,6 +21,7 @@ import net.bernerbits.avolve.slcupload.dataimport.model.SpreadsheetRow;
 import net.bernerbits.avolve.slcupload.ui.controller.SLCUploadController;
 import net.bernerbits.avolve.slcupload.ui.presenter.FileTransferPresenter;
 import net.bernerbits.avolve.slcupload.ui.util.ClosureColumnLabelProvider;
+import net.bernerbits.avolve.slcupload.util.ThrowingRunnable;
 
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
@@ -35,9 +36,12 @@ import org.eclipse.jface.viewers.TableViewerColumn;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
+import org.eclipse.swt.graphics.Color;
+import org.eclipse.swt.graphics.RGB;
 import org.eclipse.swt.layout.FormAttachment;
 import org.eclipse.swt.layout.FormData;
 import org.eclipse.swt.layout.FormLayout;
+import org.eclipse.swt.layout.RowLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
@@ -56,6 +60,8 @@ import org.eclipse.wb.swt.SWTResourceManager;
 import com.google.common.base.Stopwatch;
 
 public class SLCUploadShell extends Shell {
+	private static final String APP_DISPLAY_NAME = "PlansAnywhere File Transport Manager";
+
 	private static final boolean S3_ENABLED = true;
 
 	private final SLCUploadController slcUploadController;
@@ -76,6 +82,9 @@ public class SLCUploadShell extends Shell {
 	private ProgressBar fileTransferProgress;
 
 	private Button btnStartTransfer;
+	private Button btnPauseTransfer;
+	private Button btnStopTransfer;	
+	
 	private Button checkAutoScrollResults;
 	private Button checkErrorResultsOnly;
 
@@ -84,19 +93,40 @@ public class SLCUploadShell extends Shell {
 	private Stopwatch transferStopwatch;
 
 	private StatusLineManager status;
+	
+	private boolean transferInProgress = false;
 
+	private volatile boolean transferIsPaused = false;
+	
 	public SLCUploadShell(Display display) {
 		super(display, SWT.SHELL_TRIM);
 		slcUploadController = new SLCUploadController(this);
 
 		setLayout(new FormLayout());
 
+		Label topLogo = new Label(this, SWT.NONE);
+		topLogo.setImage(SWTResourceManager.getImage(SLCUploadShell.class, "/ftm-logo.png"));
+		topLogo.setBackground(SWTResourceManager.getColor(new RGB(0x1B, 0x3E, 0x64)));
+		FormData fd_topLabel = new FormData();
+		fd_topLabel.left = new FormAttachment(0,0);
+		fd_topLabel.top = new FormAttachment(0,0);
+		topLogo.setLayoutData(fd_topLabel);
+		
+		Label logoSpace = new Label(this, SWT.NONE);
+		logoSpace.setBackground(SWTResourceManager.getColor(new RGB(0x1B, 0x3E, 0x64)));
+		FormData fd_logoSpace = new FormData();
+		fd_logoSpace.left = new FormAttachment(topLogo,0);
+		fd_logoSpace.top = new FormAttachment(0,0);
+		fd_logoSpace.right = new FormAttachment(100,0);
+		fd_logoSpace.bottom = new FormAttachment(topLogo,0,SWT.BOTTOM);
+		logoSpace.setLayoutData(fd_logoSpace);
+		
 		Group grpInputSource = new Group(this, SWT.NONE);
 		FormData fd_grpInputSource = new FormData();
-		fd_grpInputSource.top = new FormAttachment(0, 10);
+		fd_grpInputSource.top = new FormAttachment(topLogo, 10);
 		fd_grpInputSource.left = new FormAttachment(0, 10);
 		fd_grpInputSource.right = new FormAttachment(100, -10);
-		fd_grpInputSource.bottom = new FormAttachment(0, 196);
+		fd_grpInputSource.bottom = new FormAttachment(topLogo, 196, SWT.BOTTOM);
 		grpInputSource.setLayoutData(fd_grpInputSource);
 		grpInputSource.setLayout(new FormLayout());
 		grpInputSource.setText("Input Source");
@@ -114,7 +144,7 @@ public class SLCUploadShell extends Shell {
 		fd_inputFileField.top = new FormAttachment(0, 3);
 		inputFileField.setLayoutData(fd_inputFileField);
 
-		Button inputFileSearchButton = new Button(grpInputSource, SWT.NONE);
+		Button inputFileSearchButton = new Button(grpInputSource, SWT.PUSH);
 		inputFileSearchButton.addSelectionListener(new SelectionAdapter() {
 			@Override
 			public void widgetSelected(SelectionEvent e) {
@@ -158,7 +188,7 @@ public class SLCUploadShell extends Shell {
 		fd_grpTransferSource.left = new FormAttachment(0, 10);
 		grpTransferSource.setLayoutData(fd_grpTransferSource);
 
-		Button btnSrcFolder = new Button(grpTransferSource, SWT.NONE);
+		Button btnSrcFolder = new Button(grpTransferSource, SWT.PUSH);
 		btnSrcFolder.addSelectionListener(new SelectionAdapter() {
 			@Override
 			public void widgetSelected(SelectionEvent e) {
@@ -199,7 +229,7 @@ public class SLCUploadShell extends Shell {
 		fd_grpTransferDestination.left = new FormAttachment(0, 10);
 		grpTransferDestination.setLayoutData(fd_grpTransferDestination);
 
-		Button btnFolder = new Button(grpTransferDestination, SWT.NONE);
+		Button btnFolder = new Button(grpTransferDestination, SWT.PUSH);
 		btnFolder.addSelectionListener(new SelectionAdapter() {
 			@Override
 			public void widgetSelected(SelectionEvent e) {
@@ -210,7 +240,7 @@ public class SLCUploadShell extends Shell {
 		btnFolder.setLayoutData(fd_btnFolder);
 		btnFolder.setText("Folder...");
 
-		Button btnSBucket = new Button(grpTransferDestination, SWT.NONE);
+		Button btnSBucket = new Button(grpTransferDestination, SWT.PUSH);
 		btnSBucket.addSelectionListener(new SelectionAdapter() {
 			@Override
 			public void widgetSelected(SelectionEvent e) {
@@ -228,7 +258,7 @@ public class SLCUploadShell extends Shell {
 
 		if (!S3_ENABLED) {
 			fd_btnSBucket.left = new FormAttachment(100, 0);
-			btnSBucket.setVisible(false);
+			btnSBucket.setEnabled(false);
 		}
 		Label lblLocation = new Label(grpTransferDestination, SWT.NONE);
 		FormData fd_lblLocation = new FormData();
@@ -314,38 +344,54 @@ public class SLCUploadShell extends Shell {
 		fd_lblTransferResults.right = new FormAttachment(checkErrorResultsOnly, -5);
 		lblTransferResults.setLayoutData(fd_lblTransferResults);
 
-		btnStartTransfer = new Button(fileTransferGroup, SWT.NONE);
+		Composite transferButtons = new Composite(fileTransferGroup, SWT.NONE);
+		transferButtons.setLayout(new RowLayout(SWT.HORIZONTAL));
+		
+		btnStartTransfer = new Button(transferButtons, SWT.PUSH);
 		btnStartTransfer.addSelectionListener(new SelectionAdapter() {
 
 			@Override
 			public void widgetSelected(SelectionEvent e) {
-				btnStartTransfer.setEnabled(false);
-				duplicateCount = 0;
-				transferResultsTable.getTable().removeAll();
-				transferResultsTable.getTable().setMenu(null);
-				transferResults.clear();
-				transfersByPath.clear();
-				errorTransferResults.clear();
-				lblTransferResults.setText("");
-				for (FileTransfer transfer : conversionResults) {
-					fileTransferUpdate(transfer);
+				if (transferInProgress) {
+					resumeTransfer();
+				} else {
+					startTransfer();
 				}
-				transferStopwatch = Stopwatch.createStarted();
-				status.setMessage("Starting transfer ...");
-				slcUploadController.beginTransfer(SLCUploadShell.this::updateProgress,
-						SLCUploadShell.this::fileTransferUpdate);
 			}
 		});
+		btnStartTransfer.setText("Start");
+
+		btnPauseTransfer = new Button(transferButtons, SWT.PUSH);
+		btnPauseTransfer.setText("Pause");
+		btnPauseTransfer.setEnabled(false);
+		btnPauseTransfer.addSelectionListener(new SelectionAdapter() {
+			@Override
+			public void widgetSelected(SelectionEvent e) {
+				pauseTransfer();
+			}
+		});
+		
+		btnStopTransfer = new Button(transferButtons, SWT.PUSH);
+		btnStopTransfer.setText("Stop");
+		btnStopTransfer.setEnabled(false);
+		btnStopTransfer.addSelectionListener(new SelectionAdapter() {
+			@Override
+			public void widgetSelected(SelectionEvent e) {
+				stopTransfer();
+			}
+		});
+		
+		transferButtons.pack();
+		
 		FormData fd_btnStartTransfer = new FormData();
 		fd_btnStartTransfer.bottom = new FormAttachment(100, -10);
 		fd_btnStartTransfer.right = new FormAttachment(100, -10);
-		btnStartTransfer.setLayoutData(fd_btnStartTransfer);
-		btnStartTransfer.setText("Start Transfer");
-
+		transferButtons.setLayoutData(fd_btnStartTransfer);
+		
 		fileTransferProgress = new ProgressBar(fileTransferGroup, SWT.SMOOTH);
 		FormData fd_progressBar = new FormData();
-		fd_progressBar.top = new FormAttachment(btnStartTransfer, 2, SWT.TOP);
-		fd_progressBar.right = new FormAttachment(btnStartTransfer, -15);
+		fd_progressBar.top = new FormAttachment(transferButtons, 5, SWT.TOP);
+		fd_progressBar.right = new FormAttachment(transferButtons, -15);
 		fd_progressBar.left = new FormAttachment(lblTransferResults, 0, SWT.LEFT);
 		fileTransferProgress.setLayoutData(fd_progressBar);
 
@@ -355,13 +401,12 @@ public class SLCUploadShell extends Shell {
 		fd_table_1.top = new FormAttachment(checkAutoScrollResults, 6);
 		fd_table_1.left = new FormAttachment(0, 6);
 		fd_table_1.right = new FormAttachment(100, -6);
-		fd_table_1.bottom = new FormAttachment(btnStartTransfer, -6);
+		fd_table_1.bottom = new FormAttachment(transferButtons, -6);
 
 		table2.setLayoutData(fd_table_1);
 		table2.setHeaderVisible(true);
 		table2.setLinesVisible(true);
 
-		// TODO only enable when transfer is finished/paused/stopped
 		resultsMenu = new Menu(table2);
 		MenuItem exportItem = new MenuItem(resultsMenu, SWT.NONE);
 		exportItem.setText("Export Results...");
@@ -406,13 +451,75 @@ public class SLCUploadShell extends Shell {
 		createContents();
 	}
 
+	protected void startTransfer() {
+		transferInProgress = true;
+		setTransferActive(true);
+		
+		duplicateCount = 0;
+		transferResultsTable.getTable().removeAll();
+		transferResultsTable.getTable().setMenu(null);
+		transferResults.clear();
+		transfersByPath.clear();
+		errorTransferResults.clear();
+		lblTransferResults.setText("");
+		for (FileTransfer transfer : conversionResults) {
+			fileTransferUpdate(transfer);
+		}
+		transferStopwatch = Stopwatch.createStarted();
+		status.setMessage("Starting transfer ...");
+		slcUploadController.beginTransfer(SLCUploadShell.this::updateProgress,
+				SLCUploadShell.this::fileTransferUpdate);
+	}
+
+	protected void resumeTransfer() {
+		setTransferActive(true);
+
+		transferStopwatch.start();
+		status.setMessage("Starting transfer ...");
+		slcUploadController.resumeTransfer();
+		transferIsPaused = false;
+	}
+	
+	protected void pauseTransfer() {
+		btnPauseTransfer.setEnabled(false);
+		btnStopTransfer.setEnabled(false);
+		btnStartTransfer.setEnabled(false);
+		
+		busy("Waiting for current transfers to finish", () -> {
+			slcUploadController.pauseTransfer();
+			getDisplay().asyncExec(() -> {
+				transferIsPaused = true;
+				transferStopwatch.stop();
+				status.setMessage("Transfer is paused.");
+
+				setTransferActive(false);
+			});			
+		}); 
+	}
+	
+	protected void stopTransfer() {
+		btnPauseTransfer.setEnabled(false);
+		btnStopTransfer.setEnabled(false);
+		btnStartTransfer.setEnabled(false);
+		busy("Waiting for current transfers to finish", () -> {
+			slcUploadController.stopTransfer();
+			getDisplay().asyncExec(() -> {
+				transferIsPaused = false;
+				status.setMessage("Transfer was stopped.");
+				
+				transferHasEnded();
+				setTransferActive(false);
+			});
+		});
+	}
+	
 	/**
 	 * Create contents of the shell.
 	 */
 	protected void createContents() {
-		setText("PlansAnywhere File Transport Manager");
-		setSize(1080, 700);
-
+		setText(APP_DISPLAY_NAME);
+		setSize(1080, 800);
+		setImage(SWTResourceManager.getImage(SLCUploadShell.class, "/ftm-export.png"));
 	}
 
 	@Override
@@ -427,6 +534,10 @@ public class SLCUploadShell extends Shell {
 				this::previewRows);
 	}
 
+	private void busy(String waitMessage, ThrowingRunnable task) {
+		busy(waitMessage, () -> {task.run(); return null;}, (v) -> {/* no-op */});
+	}
+	
 	private <T> void busy(String waitMessage, Callable<T> task, Consumer<T> handler) {
 		FutureTask<T> result = new FutureTask<T>(task);
 		startTask(waitMessage, result);
@@ -438,7 +549,7 @@ public class SLCUploadShell extends Shell {
 			if (e.getCause() instanceof OutOfMemoryError) {
 				getDisplay().asyncExec(
 						() -> ErrorDialog.openError(this, waitMessage, "Could not complete the operation requested.",
-								new Status(IStatus.ERROR, "SLC Uploader", "Insufficient memory", e.getCause())));
+								new Status(IStatus.ERROR, APP_DISPLAY_NAME, "Insufficient memory", e.getCause())));
 			} else if (e.getCause() instanceof FileExtensionNotRecognizedException) {
 				FileExtensionNotRecognizedException ex = (FileExtensionNotRecognizedException) e.getCause();
 				String reason;
@@ -449,21 +560,25 @@ public class SLCUploadShell extends Shell {
 				}
 				getDisplay().asyncExec(
 						() -> ErrorDialog.openError(this, waitMessage, "Could not complete the operation requested.",
-								new Status(IStatus.ERROR, "SLC Uploader", reason, ex)));
+								new Status(IStatus.ERROR, APP_DISPLAY_NAME, reason, ex)));
 			} else if (e.getCause() instanceof SpreadsheetFileNotFoundException) {
 				SpreadsheetFileNotFoundException ex = (SpreadsheetFileNotFoundException) e.getCause();
 				String reason = "File \"" + ex.getFileName() + "\" does not exist.";
 				getDisplay().asyncExec(
 						() -> ErrorDialog.openError(this, waitMessage, "Could not complete the operation requested.",
-								new Status(IStatus.ERROR, "SLC Uploader", reason, ex)));
+								new Status(IStatus.ERROR, APP_DISPLAY_NAME, reason, ex)));
 			} else {
 				getDisplay().asyncExec(
 						() -> ErrorDialog.openError(this, waitMessage, "Could not complete the operation requested.",
-								new Status(IStatus.ERROR, "SLC Uploader", e.getMessage(), e.getCause())));
+								new Status(IStatus.ERROR, APP_DISPLAY_NAME, e.getMessage(), e.getCause())));
 			}
 			e.printStackTrace();
 		} catch (InterruptedException e) {
 			e.printStackTrace();
+		} catch (OutOfMemoryError e) {
+			getDisplay().asyncExec(
+					() -> ErrorDialog.openError(this, waitMessage, "Could not complete the operation requested.",
+							new Status(IStatus.ERROR, APP_DISPLAY_NAME, "Insufficient memory", e)));
 		} finally {
 			endTask();
 		}
@@ -484,7 +599,7 @@ public class SLCUploadShell extends Shell {
 		} catch (OutOfMemoryError e) {
 			getDisplay().asyncExec(
 					() -> ErrorDialog.openError(this, waitMessage, "Could not complete the operation requested.",
-							new Status(IStatus.ERROR, "SLC Uploader", "Insufficient memory", e)));
+							new Status(IStatus.ERROR, APP_DISPLAY_NAME, "Insufficient memory", e)));
 			System.gc();
 		} catch (InvocationTargetException | InterruptedException e) {
 			e.printStackTrace();
@@ -550,8 +665,7 @@ public class SLCUploadShell extends Shell {
 				new ColumnDefinition<>("Status", FileTransferPresenter::status),
 				new ColumnDefinition<>("Dup", FileTransferPresenter::duplicates),
 				new ColumnDefinition<>("Local Path", FileTransferPresenter::localPath),
-				new ColumnDefinition<>("Remote Path", FileTransferPresenter::remotePath)),
-				(o) -> { /* noop */ });
+				new ColumnDefinition<>("Remote Path", FileTransferPresenter::remotePath)));
 	}
 	
 	private void inputFolderSelected(String folderPath) {
@@ -574,6 +688,8 @@ public class SLCUploadShell extends Shell {
 				this::conversionStarted);
 		lblValidationErrors.setVisible(!valid);
 		recursiveSetEnabled(fileTransferGroup, valid);
+		btnPauseTransfer.setEnabled(false);
+		btnStopTransfer.setEnabled(false);
 	}
 
 	private void recursiveSetEnabled(Control ctrl, boolean enabled) {
@@ -600,23 +716,43 @@ public class SLCUploadShell extends Shell {
 	}
 
 	private void updateProgress(double progress, boolean complete) {
-		btnStartTransfer.setEnabled(complete);
-		transferResultsTable.getTable().setMenu(complete ? resultsMenu : null);
 		fileTransferProgress.setEnabled(!complete);
 		fileTransferProgress.setSelection((int) Math.round(progress * fileTransferProgress.getMaximum()));
 
 		if (complete) {
-			transferStopwatch.stop();
-			fileTransferProgress.setSelection(0);
-			lblTransferResults.setText("Transfer complete! "
-					+ (transferResults.size() - errorTransferResults.size()) + " File(s) Copied, "
-					+ duplicateCount + " Duplicates, " + errorTransferResults.size() + " Errors.");
+			setTransferActive(false);
+			transferHasEnded();
 			status.setMessage("Transfer complete");
-		} else {
+		} else if (!transferIsPaused) {
 			updateStatusLine(progress);
 		}
 	}
 
+	private void transferHasEnded() {
+		transferInProgress = false;
+		
+		// Stopwatch may have been stopped previously by a pause operation.
+		if (transferStopwatch.isRunning())
+			transferStopwatch.stop();
+		
+		fileTransferProgress.setSelection(0);
+		lblTransferResults.setText(
+				(transferResults.size() - errorTransferResults.size()) + " File(s) Copied, "
+				+ duplicateCount + " Duplicates, " + errorTransferResults.size() + " Errors.");
+	}
+	
+	private void setTransferActive(boolean isActive) {
+		btnStartTransfer.setEnabled(!isActive);
+		btnPauseTransfer.setEnabled(isActive);
+		btnStopTransfer.setEnabled(isActive || transferIsPaused);
+		
+		if(isActive) {
+			transferResultsTable.getTable().setMenu(null);
+		} else {
+			transferResultsTable.getTable().setMenu(resultsMenu);
+		}
+	}
+	
 	private void updateStatusLine(double progress) {
 		String timeRemainingMsg;
 		if (progress > 0) {
@@ -681,8 +817,11 @@ public class SLCUploadShell extends Shell {
 	}
 
 	private void packTransferResultColumns() {
-		for (TableColumn column : transferResultsTable.getTable().getColumns()) {
-			column.pack();
+		if (transferResultsTable.getTable().getItemCount() <= 5000)
+		{
+			for (TableColumn column : transferResultsTable.getTable().getColumns()) {
+				column.pack();
+			}
 		}
 	}
 

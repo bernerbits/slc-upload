@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.prefs.Preferences;
 
@@ -171,15 +172,15 @@ public class SLCUploadController {
 		new Thread(() -> {
 			count.set(0);
 			if (folderDestination != null) {
-				transferer.beginLocalTransfer(convertedRows, folderSource, folderDestination, (update) -> shell
-						.getDisplay().asyncExec(() -> {
+				transferer.performLocalTransfer(convertedRows, folderSource, folderDestination, (update) -> shell
+						.getDisplay().syncExec(() -> {
 							float ratio = ((float) count.incrementAndGet()) / convertedRows.size();
 							updateHandler.notifyFileTransfer(update);
 							progress.updateProgress(ratio, count.get() == convertedRows.size());
 						}));
 			} else {
-				transferer.beginRemoteTransfer(convertedRows, folderSource, s3Destination, (update) -> shell
-						.getDisplay().asyncExec(() -> {
+				transferer.performRemoteTransfer(convertedRows, folderSource, s3Destination, (update) -> shell
+						.getDisplay().syncExec(() -> {
 							float ratio = ((float) count.incrementAndGet()) / convertedRows.size();
 							updateHandler.notifyFileTransfer(update);
 							progress.updateProgress(ratio, count.get() == convertedRows.size());
@@ -188,6 +189,18 @@ public class SLCUploadController {
 		}).start();
 	}
 
+	public void resumeTransfer() {
+		transferer.resumeTransfer();
+	}
+
+	public void pauseTransfer() {
+		transferer.pauseTransfer();		
+	}
+	
+	public void stopTransfer() {
+		transferer.stopTransfer();		
+	}
+	
 	public final <T> void saveToCSV(FileSelectedHandler handler) {
 		FileDialog fileDialog = new FileDialog(shell, SWT.SAVE);
 		fileDialog.setFilterNames(new String[] { "Comma-Delimited Values (*.csv)" });
