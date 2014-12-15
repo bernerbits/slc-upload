@@ -2,10 +2,14 @@ package net.bernerbits.avolve.slcupload.ui;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
@@ -20,6 +24,7 @@ import net.bernerbits.avolve.slcupload.dataimport.exception.SpreadsheetFileNotFo
 import net.bernerbits.avolve.slcupload.dataimport.model.SpreadsheetRow;
 import net.bernerbits.avolve.slcupload.ui.controller.SLCUploadController;
 import net.bernerbits.avolve.slcupload.ui.presenter.FileTransferPresenter;
+import net.bernerbits.avolve.slcupload.ui.util.ClipboardDataProvider;
 import net.bernerbits.avolve.slcupload.ui.util.ClosureColumnLabelProvider;
 import net.bernerbits.avolve.slcupload.util.ThrowingRunnable;
 
@@ -28,15 +33,23 @@ import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.jface.action.StatusLineManager;
 import org.eclipse.jface.dialogs.ErrorDialog;
+import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.dialogs.ProgressMonitorDialog;
 import org.eclipse.jface.viewers.ArrayContentProvider;
 import org.eclipse.jface.viewers.ColumnLabelProvider;
 import org.eclipse.jface.viewers.TableViewer;
 import org.eclipse.jface.viewers.TableViewerColumn;
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.dnd.Clipboard;
+import org.eclipse.swt.events.KeyAdapter;
+import org.eclipse.swt.events.KeyEvent;
+import org.eclipse.swt.events.MouseEvent;
+import org.eclipse.swt.events.MouseListener;
+import org.eclipse.swt.events.MouseMoveListener;
+import org.eclipse.swt.events.MouseTrackListener;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
-import org.eclipse.swt.graphics.Color;
+import org.eclipse.swt.graphics.Point;
 import org.eclipse.swt.graphics.RGB;
 import org.eclipse.swt.layout.FormAttachment;
 import org.eclipse.swt.layout.FormData;
@@ -46,14 +59,17 @@ import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
+import org.eclipse.swt.widgets.Event;
 import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Listener;
 import org.eclipse.swt.widgets.Menu;
 import org.eclipse.swt.widgets.MenuItem;
 import org.eclipse.swt.widgets.ProgressBar;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Table;
 import org.eclipse.swt.widgets.TableColumn;
+import org.eclipse.swt.widgets.TableItem;
 import org.eclipse.swt.widgets.Text;
 import org.eclipse.wb.swt.SWTResourceManager;
 
@@ -83,8 +99,8 @@ public class SLCUploadShell extends Shell {
 
 	private Button btnStartTransfer;
 	private Button btnPauseTransfer;
-	private Button btnStopTransfer;	
-	
+	private Button btnStopTransfer;
+
 	private Button checkAutoScrollResults;
 	private Button checkErrorResultsOnly;
 
@@ -93,14 +109,20 @@ public class SLCUploadShell extends Shell {
 	private Stopwatch transferStopwatch;
 
 	private StatusLineManager status;
-	
+
 	private boolean transferInProgress = false;
 
 	private volatile boolean transferIsPaused = false;
-	
+
+	private boolean closing = false;
+
+	private Clipboard clipboard;
+
 	public SLCUploadShell(Display display) {
 		super(display, SWT.SHELL_TRIM);
 		slcUploadController = new SLCUploadController(this);
+
+		clipboard = new Clipboard(display);
 
 		setLayout(new FormLayout());
 
@@ -108,19 +130,19 @@ public class SLCUploadShell extends Shell {
 		topLogo.setImage(SWTResourceManager.getImage(SLCUploadShell.class, "/ftm-logo.png"));
 		topLogo.setBackground(SWTResourceManager.getColor(new RGB(0x1B, 0x3E, 0x64)));
 		FormData fd_topLabel = new FormData();
-		fd_topLabel.left = new FormAttachment(0,0);
-		fd_topLabel.top = new FormAttachment(0,0);
+		fd_topLabel.left = new FormAttachment(0, 0);
+		fd_topLabel.top = new FormAttachment(0, 0);
 		topLogo.setLayoutData(fd_topLabel);
-		
+
 		Label logoSpace = new Label(this, SWT.NONE);
 		logoSpace.setBackground(SWTResourceManager.getColor(new RGB(0x1B, 0x3E, 0x64)));
 		FormData fd_logoSpace = new FormData();
-		fd_logoSpace.left = new FormAttachment(topLogo,0);
-		fd_logoSpace.top = new FormAttachment(0,0);
-		fd_logoSpace.right = new FormAttachment(100,0);
-		fd_logoSpace.bottom = new FormAttachment(topLogo,0,SWT.BOTTOM);
+		fd_logoSpace.left = new FormAttachment(topLogo, 0);
+		fd_logoSpace.top = new FormAttachment(0, 0);
+		fd_logoSpace.right = new FormAttachment(100, 0);
+		fd_logoSpace.bottom = new FormAttachment(topLogo, 0, SWT.BOTTOM);
 		logoSpace.setLayoutData(fd_logoSpace);
-		
+
 		Group grpInputSource = new Group(this, SWT.NONE);
 		FormData fd_grpInputSource = new FormData();
 		fd_grpInputSource.top = new FormAttachment(topLogo, 10);
@@ -346,7 +368,7 @@ public class SLCUploadShell extends Shell {
 
 		Composite transferButtons = new Composite(fileTransferGroup, SWT.NONE);
 		transferButtons.setLayout(new RowLayout(SWT.HORIZONTAL));
-		
+
 		btnStartTransfer = new Button(transferButtons, SWT.PUSH);
 		btnStartTransfer.addSelectionListener(new SelectionAdapter() {
 
@@ -370,7 +392,7 @@ public class SLCUploadShell extends Shell {
 				pauseTransfer();
 			}
 		});
-		
+
 		btnStopTransfer = new Button(transferButtons, SWT.PUSH);
 		btnStopTransfer.setText("Stop");
 		btnStopTransfer.setEnabled(false);
@@ -380,14 +402,14 @@ public class SLCUploadShell extends Shell {
 				stopTransfer();
 			}
 		});
-		
+
 		transferButtons.pack();
-		
+
 		FormData fd_btnStartTransfer = new FormData();
 		fd_btnStartTransfer.bottom = new FormAttachment(100, -10);
 		fd_btnStartTransfer.right = new FormAttachment(100, -10);
 		transferButtons.setLayoutData(fd_btnStartTransfer);
-		
+
 		fileTransferProgress = new ProgressBar(fileTransferGroup, SWT.SMOOTH);
 		FormData fd_progressBar = new FormData();
 		fd_progressBar.top = new FormAttachment(transferButtons, 5, SWT.TOP);
@@ -407,6 +429,8 @@ public class SLCUploadShell extends Shell {
 		table2.setHeaderVisible(true);
 		table2.setLinesVisible(true);
 
+		addDragMultiselect(table2);
+
 		resultsMenu = new Menu(table2);
 		MenuItem exportItem = new MenuItem(resultsMenu, SWT.NONE);
 		exportItem.setText("Export Results...");
@@ -416,7 +440,44 @@ public class SLCUploadShell extends Shell {
 				slcUploadController.saveToCSV(SLCUploadShell.this::saveResultsToCsv);
 			}
 		});
-		
+
+		new MenuItem(resultsMenu, SWT.SEPARATOR);
+
+		MenuItem selAllItem = new MenuItem(resultsMenu, SWT.NONE);
+		selAllItem.setText("Select all\tCtrl+A");
+		selAllItem.setAccelerator(SWT.MOD1 | 'A');
+		selAllItem.addSelectionListener(new SelectionAdapter() {
+			@Override
+			public void widgetSelected(SelectionEvent e) {
+				selectAllResults();
+			}
+		});
+
+		MenuItem copyItem = new MenuItem(resultsMenu, SWT.NONE);
+		copyItem.setText("Copy selected\tCtrl+C");
+		selAllItem.setAccelerator(SWT.MOD1 | 'C');
+		copyItem.addSelectionListener(new SelectionAdapter() {
+			@Override
+			public void widgetSelected(SelectionEvent e) {
+				copySelectedResults();
+			}
+		});
+
+		transferResultsTable.getTable().addKeyListener(new KeyAdapter() {
+			@Override
+			public void keyPressed(KeyEvent e) {
+				if (transferIsNotRunning()) {
+					if ((e.stateMask & (SWT.CTRL | SWT.COMMAND)) != 0) {
+						if (e.keyCode == 'a' || e.keyCode == 'A') {
+							selectAllResults();
+						} else if (e.keyCode == 'c' || e.keyCode == 'C') {
+							copySelectedResults();
+						}
+					}
+				}
+			}
+		});
+
 		TableViewerColumn statusColumn = new TableViewerColumn(transferResultsTable, SWT.NONE);
 		statusColumn.getColumn().setText("Status");
 		statusColumn.getColumn().setResizable(true);
@@ -446,15 +507,193 @@ public class SLCUploadShell extends Shell {
 		remotePathColumn.getColumn().pack();
 		remotePathColumn.setLabelProvider(new ClosureColumnLabelProvider<>(FileTransferPresenter::remotePath));
 
+		addListener(SWT.Close, new Listener() {
+			@Override
+			public void handleEvent(Event event) {
+				if (transferInProgress) {
+					event.doit = false;
+					closeWithConfirmation();
+				} else {
+					SWTResourceManager.dispose();
+				}
+			}
+		});
+
 		checkValidForTransfer();
 
 		createContents();
 	}
 
+	protected void selectAllResults() {
+		transferResultsTable.getTable().setSelection(transferResultsTable.getTable().getItems());
+	}
+
+	protected void copySelectedResults() {
+		TableColumn[] columns = transferResultsTable.getTable().getColumns();
+		TableItem[] selection = transferResultsTable.getTable().getSelection();
+
+		busy("Copying selection to clipboard...", () -> {
+			return new ClipboardDataProvider(getDisplay()).toClipboardData(columns, selection);
+		}, (d) -> clipboard.setContents(d.getData(), d.getTransfers()));
+	}
+
+	private class DragListener implements MouseMoveListener, MouseListener, MouseTrackListener {
+
+		private final Table table;
+		private boolean selectionStarted = false;
+
+		private TableItem firstItem;
+		private TableItem lastItem;
+
+		private Timer scrollTimer;
+
+		public DragListener(Table table) {
+			this.table = table;
+		}
+
+		@Override
+		public void mouseDoubleClick(MouseEvent e) {
+			// No-Op
+		}
+
+		@Override
+		public void mouseDown(MouseEvent e) {
+			if (transferIsNotRunning() && e.button == 1
+					&& ((e.stateMask & (SWT.CONTROL | SWT.SHIFT | SWT.COMMAND)) == 0)) {
+
+				Point pt = new Point(e.x, e.y);
+				TableItem item = table.getItem(pt);
+				if (item == null)
+					return;
+
+				selectionStarted = true;
+				firstItem = item;
+				lastItem = item;
+
+				table.setSelection(item);
+			}
+		}
+
+		@Override
+		public void mouseUp(MouseEvent e) {
+			selectionStarted = false;
+			table.setCapture(false);
+			if (scrollTimer != null) {
+				scrollTimer.cancel();
+				scrollTimer = null;
+			}
+		}
+
+		@Override
+		public void mouseMove(MouseEvent e) {
+			if (selectionStarted) {
+				Point pt = new Point(e.x, e.y);
+
+				TableItem item = table.getItem(pt);
+				if (item == null)
+					return;
+
+				lastItem = item;
+
+				int firstIndex = table.indexOf(firstItem);
+				int lastIndex = table.indexOf(lastItem);
+
+				if (firstIndex > lastIndex) {
+					int tmp = lastIndex;
+					lastIndex = firstIndex;
+					firstIndex = tmp;
+				}
+
+				table.setSelection(Arrays.copyOfRange(table.getItems(), firstIndex, lastIndex + 1));
+			}
+		}
+
+		@Override
+		public void mouseEnter(MouseEvent e) {
+			if (selectionStarted) {
+				table.setCapture(false);
+				if (scrollTimer != null) {
+					scrollTimer.cancel();
+					scrollTimer = null;
+				}
+			}
+		}
+
+		@Override
+		public void mouseExit(MouseEvent e) {
+			if (selectionStarted) {
+				table.setCapture(true);
+
+				scrollTimer = new Timer();
+				scrollTimer.scheduleAtFixedRate(new TimerTask() {
+					@Override
+					public void run() {
+						getDisplay().syncExec(() -> {
+							Point cursor = table.toControl(getDisplay().getCursorLocation());
+
+							boolean scrollUp = cursor.y < 0;
+							boolean scrollDown = cursor.y >= table.getBounds().height;
+
+							if (scrollUp || scrollDown) {
+								int firstIndex = table.indexOf(firstItem);
+								int lastIndex = table.indexOf(lastItem);
+
+								if (scrollUp) {
+									lastIndex--;
+								} else {
+									lastIndex++;
+								}
+
+								TableItem newItem = null;
+								if (lastIndex >= 0 && lastIndex < table.getItems().length) {
+									newItem = table.getItem(lastIndex);
+								}
+
+								if (newItem != null) {
+									lastItem = newItem;
+								}
+
+								if (newItem != null) {
+									int minIndex = Math.min(firstIndex, lastIndex);
+									int maxIndex = Math.max(firstIndex, lastIndex);
+
+									table.setSelection(Arrays.copyOfRange(table.getItems(), minIndex, maxIndex + 1));
+									table.showItem(newItem);
+								}
+							}
+						});
+					}
+				}, new Date(), 66L);
+			}
+		}
+
+		@Override
+		public void mouseHover(MouseEvent e) {
+			// No-op
+		}
+	}
+
+	private void addDragMultiselect(Table table) {
+		DragListener dragListener = new DragListener(table);
+		table.addMouseListener(dragListener);
+		table.addMouseMoveListener(dragListener);
+		table.addMouseTrackListener(dragListener);
+	}
+
+	private void closeWithConfirmation() {
+		boolean confirm = MessageDialog
+				.openQuestion(this, "Transfer in Progress",
+						"A transfer is in progress. This will finish any current file transfers and end your session. Continue?");
+		if (confirm) {
+			closing = true;
+			stopTransfer();
+		}
+	}
+
 	protected void startTransfer() {
 		transferInProgress = true;
 		setTransferActive(true);
-		
+
 		duplicateCount = 0;
 		transferResultsTable.getTable().removeAll();
 		transferResultsTable.getTable().setMenu(null);
@@ -467,8 +706,7 @@ public class SLCUploadShell extends Shell {
 		}
 		transferStopwatch = Stopwatch.createStarted();
 		status.setMessage("Starting transfer ...");
-		slcUploadController.beginTransfer(SLCUploadShell.this::updateProgress,
-				SLCUploadShell.this::fileTransferUpdate);
+		slcUploadController.beginTransfer(SLCUploadShell.this::updateProgress, SLCUploadShell.this::fileTransferUpdate);
 	}
 
 	protected void resumeTransfer() {
@@ -479,12 +717,12 @@ public class SLCUploadShell extends Shell {
 		slcUploadController.resumeTransfer();
 		transferIsPaused = false;
 	}
-	
+
 	protected void pauseTransfer() {
 		btnPauseTransfer.setEnabled(false);
 		btnStopTransfer.setEnabled(false);
 		btnStartTransfer.setEnabled(false);
-		
+
 		busy("Waiting for current transfers to finish", () -> {
 			slcUploadController.pauseTransfer();
 			getDisplay().asyncExec(() -> {
@@ -493,10 +731,10 @@ public class SLCUploadShell extends Shell {
 				status.setMessage("Transfer is paused.");
 
 				setTransferActive(false);
-			});			
-		}); 
+			});
+		});
 	}
-	
+
 	protected void stopTransfer() {
 		btnPauseTransfer.setEnabled(false);
 		btnStopTransfer.setEnabled(false);
@@ -506,13 +744,13 @@ public class SLCUploadShell extends Shell {
 			getDisplay().asyncExec(() -> {
 				transferIsPaused = false;
 				status.setMessage("Transfer was stopped.");
-				
+
 				transferHasEnded();
 				setTransferActive(false);
 			});
 		});
 	}
-	
+
 	/**
 	 * Create contents of the shell.
 	 */
@@ -535,9 +773,13 @@ public class SLCUploadShell extends Shell {
 	}
 
 	private void busy(String waitMessage, ThrowingRunnable task) {
-		busy(waitMessage, () -> {task.run(); return null;}, (v) -> {/* no-op */});
+		busy(waitMessage, () -> {
+			task.run();
+			return null;
+		}, (v) -> {/* no-op */
+		});
 	}
-	
+
 	private <T> void busy(String waitMessage, Callable<T> task, Consumer<T> handler) {
 		FutureTask<T> result = new FutureTask<T>(task);
 		startTask(waitMessage, result);
@@ -660,14 +902,14 @@ public class SLCUploadShell extends Shell {
 	private void saveResultsToCsv(String csvFile) {
 		List<FileTransferPresenter> results = checkErrorResultsOnly.getSelection() ? errorTransferResults
 				: transferResults;
-		
-		busy("Writing \"" + csvFile + "\"...", () -> slcUploadController.writeCsv(csvFile, results, 
-				new ColumnDefinition<>("Status", FileTransferPresenter::status),
-				new ColumnDefinition<>("Dup", FileTransferPresenter::duplicates),
-				new ColumnDefinition<>("Local Path", FileTransferPresenter::localPath),
-				new ColumnDefinition<>("Remote Path", FileTransferPresenter::remotePath)));
+
+		busy("Writing \"" + csvFile + "\"...", () -> slcUploadController.writeCsv(csvFile, results,
+				new ColumnDefinition<>("Status", FileTransferPresenter::status), new ColumnDefinition<>("Dup",
+						FileTransferPresenter::duplicates), new ColumnDefinition<>("Local Path",
+						FileTransferPresenter::localPath), new ColumnDefinition<>("Remote Path",
+						FileTransferPresenter::remotePath)));
 	}
-	
+
 	private void inputFolderSelected(String folderPath) {
 		inputLocationField.setText("Folder: " + folderPath);
 		checkValidForTransfer();
@@ -730,29 +972,32 @@ public class SLCUploadShell extends Shell {
 
 	private void transferHasEnded() {
 		transferInProgress = false;
-		
+
 		// Stopwatch may have been stopped previously by a pause operation.
 		if (transferStopwatch.isRunning())
 			transferStopwatch.stop();
-		
+
 		fileTransferProgress.setSelection(0);
-		lblTransferResults.setText(
-				(transferResults.size() - errorTransferResults.size()) + " File(s) Copied, "
+		lblTransferResults.setText((transferResults.size() - errorTransferResults.size()) + " File(s) Copied, "
 				+ duplicateCount + " Duplicates, " + errorTransferResults.size() + " Errors.");
+
+		if (closing) {
+			getDisplay().asyncExec(this::close);
+		}
 	}
-	
+
 	private void setTransferActive(boolean isActive) {
 		btnStartTransfer.setEnabled(!isActive);
 		btnPauseTransfer.setEnabled(isActive);
 		btnStopTransfer.setEnabled(isActive || transferIsPaused);
-		
-		if(isActive) {
+
+		if (isActive) {
 			transferResultsTable.getTable().setMenu(null);
 		} else {
 			transferResultsTable.getTable().setMenu(resultsMenu);
 		}
 	}
-	
+
 	private void updateStatusLine(double progress) {
 		String timeRemainingMsg;
 		if (progress > 0) {
@@ -817,8 +1062,7 @@ public class SLCUploadShell extends Shell {
 	}
 
 	private void packTransferResultColumns() {
-		if (transferResultsTable.getTable().getItemCount() <= 5000)
-		{
+		if (transferResultsTable.getTable().getItemCount() <= 5000) {
 			for (TableColumn column : transferResultsTable.getTable().getColumns()) {
 				column.pack();
 			}
@@ -840,9 +1084,10 @@ public class SLCUploadShell extends Shell {
 					errorTransferResults.add(presenter);
 				}
 				transferResultsTable.add(presenter);
+
 				if (checkAutoScrollResults.getSelection()) {
-					transferResultsTable.getTable().setSelection(transferResultsTable.getTable().getItems().length - 1);
-					transferResultsTable.getTable().showSelection();
+					TableItem[] items = transferResultsTable.getTable().getItems();
+					transferResultsTable.getTable().showItem(items[items.length - 1]);
 				}
 
 				long currentTime = System.currentTimeMillis();
@@ -854,5 +1099,9 @@ public class SLCUploadShell extends Shell {
 
 			transfersByPath.put(transfer.getPathAsString(), presenter);
 		}
+	}
+
+	private boolean transferIsNotRunning() {
+		return !transferInProgress || transferIsPaused;
 	}
 }

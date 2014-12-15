@@ -86,6 +86,22 @@ public class FileIcons {
 		return convertToSWT(image);
 	}
 
+	public static Image getTextFileImage() throws IOException {
+		File tempDir;
+		try {
+			tempDir = File.createTempFile("tmp", ".txt");
+			try {
+				ImageIcon systemIcon = (ImageIcon) FileSystemView.getFileSystemView().getSystemIcon(tempDir.getParentFile());
+				java.awt.Image image = systemIcon.getImage();
+				return convertToSWT(image);
+			} finally {
+				tempDir.delete();				
+			}
+		} catch (IOException e) {
+			throw new ExceptionInInitializerError(e);
+		}
+	}
+	
 	public static Image getBucketImage(int size) throws IOException {
 		String bucketSvg = "<?xml version=\"1.0\" encoding=\"utf-16\"?>\n"
 				+ "<!-- Generator: Adobe Illustrator 14.0.0, SVG Export Plug-In . SVG Version: 6.00 Build 43363)  -->\n"
