@@ -75,7 +75,6 @@ import org.eclipse.swt.widgets.Text;
 import org.eclipse.wb.swt.SWTResourceManager;
 
 import com.google.common.base.Stopwatch;
-import com.sun.istack.internal.NotNull;
 
 public class SLCUploadShell extends Shell {
 	private static final String APP_DISPLAY_NAME = "PlansAnywhere File Transport Manager";
@@ -460,7 +459,7 @@ public class SLCUploadShell extends Shell {
 		selAllItem.setAccelerator(SWT.MOD1 | 'C');
 		copyItem.addSelectionListener(new SelectionAdapter() {
 			@Override
-			public void widgetSelected(@NotNull @Nullable SelectionEvent e) {
+			public void widgetSelected(@Nullable SelectionEvent e) {
 				copySelectedResults();
 			}
 		});
@@ -702,6 +701,7 @@ public class SLCUploadShell extends Shell {
 		setTransferActive(true);
 
 		duplicateCount = 0;
+		skippedCount = 0;
 		transferResultsTable.getTable().removeAll();
 		transferResultsTable.getTable().setMenu(null);
 		transferResults.clear();
@@ -889,13 +889,10 @@ public class SLCUploadShell extends Shell {
 					column.setLabelProvider(new ColumnLabelProvider() {
 						@Override
 						public String getText(@Nullable Object element) {
-							if (element != null)
-							{
+							if (element != null) {
 								String text = ((SpreadsheetRow) element).getValues()[colInd];
 								return text;
-							}
-							else
-							{
+							} else {
 								return "";
 							}
 						}
@@ -992,8 +989,19 @@ public class SLCUploadShell extends Shell {
 			transferStopwatch.stop();
 
 		fileTransferProgress.setSelection(0);
-		lblTransferResults.setText((transferResults.size() - errorTransferResults.size()) + " File(s) Copied, "
-				+ duplicateCount + " Duplicates, " + errorTransferResults.size() + " Errors.");
+
+		String resultText = (transferResults.size() - errorTransferResults.size() - skippedCount) + " File(s) Copied, "
+				+ skippedCount + " Skipped, " + duplicateCount + " Duplicates, " + errorTransferResults.size()
+				+ " Errors";
+
+		int diff = slcUploadController.getTotalCount() - slcUploadController.getTransferCount();
+		if (diff == 0) {
+			resultText += ".";
+		} else {
+			resultText += ", " + diff + " Not Copied";
+		}
+
+		lblTransferResults.setText(resultText);
 
 		if (closing) {
 			getDisplay().asyncExec(this::close);
@@ -1051,8 +1059,8 @@ public class SLCUploadShell extends Shell {
 		} else {
 			timeRemainingMsg = "Calculating...";
 		}
-		status.setMessage("Time Remaining: " + timeRemainingMsg + " (Transferring file "
-				+ slcUploadController.getTransferCount() + " of " + slcUploadController.getTotalCount() + ")");
+		status.setMessage("Time Remaining: " + timeRemainingMsg + " (File " + slcUploadController.getTransferCount()
+				+ " of " + slcUploadController.getTotalCount() + ")");
 	}
 
 	private long lastPackTime = 0;
@@ -1061,6 +1069,7 @@ public class SLCUploadShell extends Shell {
 	private List<FileTransferPresenter> errorTransferResults = new ArrayList<>();
 
 	private int duplicateCount = 0;
+	private int skippedCount = 0;
 	private Map<String, FileTransferPresenter> transfersByPath = new HashMap<>();
 
 	private List<FileTransfer> conversionResults = new ArrayList<>();
@@ -1092,7 +1101,11 @@ public class SLCUploadShell extends Shell {
 		} else {
 			FileTransferPresenter presenter = new FileTransferPresenter(transfer);
 			transferResults.add(presenter);
-			boolean errorResult = !(transfer.getStatus().equals("\u2713"));
+			boolean skipped = transfer.getStatus().startsWith("Skipped");
+			boolean errorResult = !(skipped || transfer.getStatus().equals("\u2713"));
+			if (skipped) {
+				skippedCount++;
+			}
 			if (errorResult || !checkErrorResultsOnly.getSelection()) {
 				if (errorResult) {
 					errorTransferResults.add(presenter);

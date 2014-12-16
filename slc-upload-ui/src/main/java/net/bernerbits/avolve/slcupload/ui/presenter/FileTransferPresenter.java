@@ -33,15 +33,21 @@ public class FileTransferPresenter {
 
 	@SuppressWarnings("null")
 	public @NonNull Color foregroundHint() {
-		if (!isError()) {
-			return SWTResourceManager.getColor(SWT.COLOR_DARK_GREEN);
-		} else {
+		if (isError()) {
 			return SWTResourceManager.getColor(SWT.COLOR_RED);
+		} else if (isSkipped()) {
+			return SWTResourceManager.getColor(SWT.COLOR_DARK_YELLOW);
+		} else {
+			return SWTResourceManager.getColor(SWT.COLOR_DARK_GREEN);
 		}
 	}
 
+	public boolean isSkipped() {
+		return fileTransfer.getStatus().toUpperCase().startsWith("SKIPPED");
+	}
+
 	public boolean isError() {
-		return !fileTransfer.getStatus().toUpperCase().equals("\u2713");
+		return !isSkipped() && !fileTransfer.getStatus().toUpperCase().equals("\u2713");
 	}
 
 	public void addDuplicate() {

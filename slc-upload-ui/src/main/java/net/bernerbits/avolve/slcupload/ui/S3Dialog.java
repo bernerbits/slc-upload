@@ -30,6 +30,8 @@ import org.eclipse.swt.widgets.Tree;
 import org.eclipse.swt.widgets.TreeItem;
 import org.eclipse.wb.swt.SWTResourceManager;
 
+import com.google.common.base.Strings;
+
 public class S3Dialog extends Dialog {
 	private static Image folderIcon;
 	private static Image bucketIcon;
@@ -182,7 +184,7 @@ public class S3Dialog extends Dialog {
 		s3BucketTree.addSelectionChangedListener((e) -> okButton.setEnabled(!e.getSelection().isEmpty()));
 		tree.setVisible(false);
 		
-		s3StatusLabel = new CLabel(shell, SWT.BORDER);
+		s3StatusLabel = new CLabel(shell, SWT.BORDER | SWT.WRAP);
 		s3StatusLabel.setAlignment(SWT.CENTER);
 		FormData fd_lblConnectingToS = new FormData();
 		fd_lblConnectingToS.top = new FormAttachment(tree, 0, SWT.TOP);
@@ -210,9 +212,19 @@ public class S3Dialog extends Dialog {
 			checkInProgress = true;
 			String awsKey = awsKeyText.getText();
 			String awsSecret = awsSecretText.getText();
-			new Thread(() -> uploadController.listBuckets(awsKey, awsSecret,
-					this::connectionCheckFinished, this::populateBucketTree)).start();
-			;
+			
+			if (Strings.isNullOrEmpty(awsKey) || Strings.isNullOrEmpty(awsSecret))
+			{
+				s3StatusLabel.setText("Please enter your S3 credentials.");
+				checkInProgress = false;
+				progress.setVisible(false);
+			}
+			else
+			{
+				new Thread(() -> uploadController.listBuckets(awsKey, awsSecret,
+						this::connectionCheckFinished, this::populateBucketTree)).start();
+				;
+			}
 		} else {
 			checkNeeded = true;
 		}
@@ -227,7 +239,7 @@ public class S3Dialog extends Dialog {
 				s3BucketTree.getTree().setVisible(true);
 			} else {
 				progress.setState(SWT.PAUSED);
-				s3StatusLabel.setText("Unable to connect to S3.");
+				s3StatusLabel.setText("Unable to connect to S3. Please check your S3 credentials.");
 			}
 			if (checkNeeded) {
 				checkNeeded = false;

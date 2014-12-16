@@ -59,8 +59,6 @@ public class S3FileTransfer extends RealFileTransfer {
 			boolean skip = false;
 			Set<String> summaries = getSummaries();
 			
-			String s = summaries.stream().filter((str) -> str.startsWith("367")).findFirst().orElse("WRONG");
-			
 			if (summaries.contains(remoteDest.toLowerCase())) {
 				skip = existingFileHandler.getOptions(getPath()).isSkip();
 			}
@@ -80,21 +78,24 @@ public class S3FileTransfer extends RealFileTransfer {
 	}
 
 	private Set<String> getSummaries() {
-		SoftReference<Set<String>> ref = objCache.get(bucket);
-		Set<String> summaries = ref == null ? null : ref.get();
-		if (summaries == null) {
-			ObjectListing listing = getClient(credentials).listObjects(bucket);
-			summaries = new ConcurrentSkipListSet<>(listing.getObjectSummaries().stream()
-					.map((os) -> os.getKey().toLowerCase()).collect(NullSafe.toListCollector()));
-			while (listing.isTruncated()) {
-				listing = getClient(credentials).listNextBatchOfObjects(listing);
-				summaries.addAll(listing.getObjectSummaries().stream()
+		synchronized(objCache)
+		{
+			SoftReference<Set<String>> ref = objCache.get(bucket);
+			Set<String> summaries = ref == null ? null : ref.get();
+			if (summaries == null) {
+				ObjectListing listing = getClient(credentials).listObjects(bucket);
+				summaries = new ConcurrentSkipListSet<>(listing.getObjectSummaries().stream()
 						.map((os) -> os.getKey().toLowerCase()).collect(NullSafe.toListCollector()));
+				while (listing.isTruncated()) {
+					listing = getClient(credentials).listNextBatchOfObjects(listing);
+					summaries.addAll(listing.getObjectSummaries().stream()
+							.map((os) -> os.getKey().toLowerCase()).collect(NullSafe.toListCollector()));
+				}
+				ref = new SoftReference<>(summaries);
+				objCache.put(bucket, ref);
 			}
-			ref = new SoftReference<>(summaries);
-			objCache.put(bucket, ref);
+			return summaries;
 		}
-		return summaries;
 	}
 
 	private static AmazonS3Client getClient(AWSCredentials credentials) {

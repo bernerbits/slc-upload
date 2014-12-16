@@ -211,7 +211,7 @@ public class FileTransferer {
 			RemoteFolder s3Destination, FileTransferCallback callback, ExistingFileHandler handler) {
 		S3Folder s3Folder = (S3Folder) s3Destination;
 		Multiset<Path> pathCounts = HashMultiset.create();
-		withState(transferObjects.stream().map(remoteFileTransfer(folderSource, s3Folder, handler)),
+		withState(transferObjects.parallelStream().map(remoteFileTransfer(folderSource, s3Folder, handler)),
 				transfer(pathCounts, callback));
 	}
 

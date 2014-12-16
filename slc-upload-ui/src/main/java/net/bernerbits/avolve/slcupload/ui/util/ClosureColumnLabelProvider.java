@@ -1,5 +1,6 @@
 package net.bernerbits.avolve.slcupload.ui.util;
 
+import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.jdt.annotation.Nullable;
 import org.eclipse.jface.viewers.ColumnLabelProvider;
 import org.eclipse.swt.graphics.Color;
@@ -7,7 +8,6 @@ import org.eclipse.swt.graphics.RGB;
 import org.eclipse.wb.swt.SWTResourceManager;
 
 import com.google.common.base.Function;
-import com.sun.istack.internal.NotNull;
 
 public class ClosureColumnLabelProvider<T> extends ColumnLabelProvider {
 	private final Function<T, String> labelFunction;
@@ -19,8 +19,7 @@ public class ClosureColumnLabelProvider<T> extends ColumnLabelProvider {
 		this.foregroundFunction = null;
 	}
 
-	public ClosureColumnLabelProvider(Function<T, String> labelFunction,
-			Function<T, Color> foregroundFunction) {
+	public ClosureColumnLabelProvider(Function<T, String> labelFunction, Function<T, Color> foregroundFunction) {
 		this.labelFunction = labelFunction;
 		this.foregroundFunction = foregroundFunction;
 	}
@@ -33,7 +32,7 @@ public class ClosureColumnLabelProvider<T> extends ColumnLabelProvider {
 
 	@SuppressWarnings("unchecked")
 	@Override
-	public @NotNull Color getForeground(@Nullable Object element) {
+	public @NonNull Color getForeground(@Nullable Object element) {
 		if (foregroundFunction != null) {
 			return foregroundFunction.apply((T) element);
 		} else {

@@ -45,13 +45,23 @@ public class S3RootBucketFolder extends S3Folder {
 		Map<String, S3BucketChildFolder> folders = new HashMap<>();
 		
 		ObjectListing listing = client.listObjects(bucket.getName());
-		for (S3ObjectSummary object : listing.getObjectSummaries()) {
+		for (S3ObjectSummary object : getAllObjectSummaries(listing)) {
 			if (object.getKey().contains("/"))
 			{
 				String folderName = object.getKey().substring(0, object.getKey().lastIndexOf("/"));
 				addChild(folders, folderName);
 			}
 		}
+	}
+
+	private List<S3ObjectSummary> getAllObjectSummaries(ObjectListing listing) {
+		List<S3ObjectSummary> summaries = new ArrayList<>(listing.getObjectSummaries());
+		while (listing.isTruncated())
+		{
+			listing = client.listNextBatchOfObjects(listing);
+			summaries.addAll(listing.getObjectSummaries());
+		}
+		return summaries;
 	}
 
 	private void addChild(Map<String, S3BucketChildFolder> folders,
