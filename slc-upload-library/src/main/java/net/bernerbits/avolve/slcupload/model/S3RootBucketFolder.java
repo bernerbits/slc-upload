@@ -9,10 +9,7 @@ import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.model.Bucket;
 import com.amazonaws.services.s3.model.ObjectListing;
-import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
-import com.google.common.collect.HashMultimap;
-import com.google.common.collect.Multimap;
 
 public class S3RootBucketFolder extends S3Folder {
 

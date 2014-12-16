@@ -46,7 +46,14 @@ public class SWTResourceManager {
 	// Color
 	//
 	////////////////////////////////////////////////////////////////////////////
+	
 	private static Map<RGB, Color> m_colorMap = new HashMap<RGB, Color>();
+	
+	private static Color defaultColor = new Color(Display.getCurrent(), 0,0,0);
+	static {
+		m_colorMap.put(new RGB(0,0,0), defaultColor);
+	}
+	
 	/**
 	 * Returns the system {@link Color} matching the specific ID.
 	 * 
@@ -58,6 +65,7 @@ public class SWTResourceManager {
 		Display display = Display.getCurrent();
 		return display.getSystemColor(systemColorID);
 	}
+	
 	/**
 	 * Returns a {@link Color} given its red, green and blue component values.
 	 * 

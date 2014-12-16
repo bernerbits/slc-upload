@@ -18,6 +18,7 @@ import org.apache.poi.ss.usermodel.FormulaEvaluator;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
+import org.eclipse.jdt.annotation.Nullable;
 
 public abstract class BaseExcelSpreadsheetImporter implements ISpreadsheetImporter {
 
@@ -34,18 +35,16 @@ public abstract class BaseExcelSpreadsheetImporter implements ISpreadsheetImport
 			Sheet sheet = wb.getSheetAt(0);
 			List<SpreadsheetRow> rows = new ArrayList<SpreadsheetRow>();
 			for (Row currentRow : sheet) {
-				List<String> rowValues = new ArrayList<>();
+				List<@Nullable String> rowValues = new ArrayList<>();
 				for (Cell cell : currentRow) {
 					while(rowValues.size()-1 < cell.getColumnIndex())
 					{
 						rowValues.add(null);
 					}
 					rowValues.add(cell.getColumnIndex(), df.formatCellValue(cell, eval));
-				}
-				SpreadsheetRow element = new SpreadsheetRow(rowValues.toArray(new String[0]));
-				if (element != null) {
-					rows.add(element);
-				}
+				}				
+				SpreadsheetRow element = new SpreadsheetRow(rowValues.toArray(new String[]{}));
+				rows.add(element);
 			}
 			return rows;
 		} catch (FileNotFoundException e) {

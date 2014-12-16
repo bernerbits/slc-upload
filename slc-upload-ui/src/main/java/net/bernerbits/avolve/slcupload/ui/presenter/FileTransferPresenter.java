@@ -1,36 +1,38 @@
 package net.bernerbits.avolve.slcupload.ui.presenter;
 
+import net.bernerbits.avolve.slcupload.FileTransfer;
+
+import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.graphics.Color;
 import org.eclipse.wb.swt.SWTResourceManager;
 
-import net.bernerbits.avolve.slcupload.FileTransfer;
-
 public class FileTransferPresenter {
 	private final FileTransfer fileTransfer;
 	private int duplicateCount = 0;
-	
+
 	public FileTransferPresenter(FileTransfer fileTransfer) {
 		this.fileTransfer = fileTransfer;
 	}
 
-	public String status() {
+	public @NonNull String status() {
 		return fileTransfer.getStatus();
 	}
-	
-	public String duplicates() {
-		return duplicateCount == 0 ? "" : Integer.toString(duplicateCount);
+
+	public @NonNull String duplicates() {
+		return duplicateCount == 0 ? "" : "" + duplicateCount;
 	}
-	
-	public String localPath() {
+
+	public @NonNull String localPath() {
 		return fileTransfer.getPathAsString();
 	}
-	
-	public String remotePath() {
+
+	public @NonNull String remotePath() {
 		return fileTransfer.getDestination();
 	}
-	
-	public Color foregroundHint() {
+
+	@SuppressWarnings("null")
+	public @NonNull Color foregroundHint() {
 		if (!isError()) {
 			return SWTResourceManager.getColor(SWT.COLOR_DARK_GREEN);
 		} else {
@@ -43,6 +45,6 @@ public class FileTransferPresenter {
 	}
 
 	public void addDuplicate() {
-		duplicateCount ++;
+		duplicateCount++;
 	}
 }

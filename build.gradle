@@ -16,7 +16,8 @@ subprojects {
 
     dependencies {
     	compile 'com.google.guava:guava:18.0'
-
+		compile 'org.eclipse.jdt:org.eclipse.jdt.annotation:2.0.0'
+		
         testCompile 'junit:junit:4.8+'
         testCompile 'org.mockito:mockito-all:1.10.8'
     }

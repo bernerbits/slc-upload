@@ -1,9 +1,5 @@
 package net.bernerbits.avolve.slcupload;
 
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
-import net.bernerbits.avolve.slcupload.exception.FileTransferException;
 import net.bernerbits.avolve.slcupload.model.FileTransferObject;
 
 public class ErrorFileTransfer extends FileTransfer {
@@ -22,7 +18,7 @@ public class ErrorFileTransfer extends FileTransfer {
 
 	@Override
 	public FileTransferObject getTransferObject() {
-		return new FileTransferObject(null, file, file);
+		return new FileTransferObject("", file, file);
 	}
 
 	@Override

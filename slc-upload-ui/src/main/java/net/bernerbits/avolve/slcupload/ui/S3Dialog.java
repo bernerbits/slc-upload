@@ -1,17 +1,14 @@
 package net.bernerbits.avolve.slcupload.ui;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.List;
 import java.util.prefs.Preferences;
-
-import javax.swing.ImageIcon;
-import javax.swing.filechooser.FileSystemView;
 
 import net.bernerbits.avolve.slcupload.model.RemoteFolder;
 import net.bernerbits.avolve.slcupload.ui.controller.SLCUploadController;
 import net.bernerbits.avolve.slcupload.ui.util.FileIcons;
 
+import org.eclipse.jdt.annotation.Nullable;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.jface.viewers.TreeViewer;
 import org.eclipse.swt.SWT;
@@ -31,6 +28,7 @@ import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Text;
 import org.eclipse.swt.widgets.Tree;
 import org.eclipse.swt.widgets.TreeItem;
+import org.eclipse.wb.swt.SWTResourceManager;
 
 public class S3Dialog extends Dialog {
 	private static Image folderIcon;
@@ -44,7 +42,8 @@ public class S3Dialog extends Dialog {
 		}
 	}	
 	
-	protected RemoteFolder result;
+	protected @Nullable RemoteFolder result;
+	
 	protected Shell shell;
 	private Text awsKeyText;
 	private Text awsSecretText;
@@ -72,7 +71,7 @@ public class S3Dialog extends Dialog {
 	 * 
 	 * @return the result
 	 */
-	public RemoteFolder open() {
+	public @Nullable RemoteFolder open() {
 		createContents();
 		shell.open();
 		shell.layout();
@@ -91,9 +90,10 @@ public class S3Dialog extends Dialog {
 	private void createContents() {
 		shell = new Shell(getParent(), getStyle());
 		shell.setSize(576, 395);
-		shell.setText(getText());
+		shell.setText("Select S3 Bucket");
 		shell.setLayout(new FormLayout());
 		shell.setBackgroundMode(SWT.INHERIT_FORCE);
+		shell.setImage(SWTResourceManager.getImage(S3Dialog.class, "/ftm-export.png"));
 
 		Label lblAwsKey = new Label(shell, SWT.NONE);
 		FormData fd_lblAwsKey = new FormData();
@@ -137,7 +137,7 @@ public class S3Dialog extends Dialog {
 		Button cancelButton = new Button(shell, SWT.NONE);
 		cancelButton.addSelectionListener(new SelectionAdapter() {
 			@Override
-			public void widgetSelected(SelectionEvent e) {
+			public void widgetSelected(@Nullable SelectionEvent e) {
 				finish(null);
 			}
 		});
@@ -155,7 +155,7 @@ public class S3Dialog extends Dialog {
 		okButton.setText("OK");
 		okButton.addSelectionListener(new SelectionAdapter() {
 			@Override
-			public void widgetSelected(SelectionEvent e) {
+			public void widgetSelected(@Nullable SelectionEvent e) {
 				RemoteFolder selected = s3BucketTree.getSelection().isEmpty() ? null
 						: (RemoteFolder) ((IStructuredSelection) s3BucketTree.getSelection()).getFirstElement();
 				finish(selected);
@@ -263,7 +263,7 @@ public class S3Dialog extends Dialog {
 		}
 	}
 
-	private void finish(RemoteFolder result) {
+	private void finish(@Nullable RemoteFolder result) {
 		this.result = result;
 		shell.dispose();
 	}

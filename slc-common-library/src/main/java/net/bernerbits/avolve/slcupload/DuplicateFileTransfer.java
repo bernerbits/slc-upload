@@ -1,8 +1,5 @@
 package net.bernerbits.avolve.slcupload;
 
-import java.nio.file.Path;
-
-import net.bernerbits.avolve.slcupload.exception.FileTransferException;
 import net.bernerbits.avolve.slcupload.model.FileTransferObject;
 
 public class DuplicateFileTransfer extends FileTransfer {

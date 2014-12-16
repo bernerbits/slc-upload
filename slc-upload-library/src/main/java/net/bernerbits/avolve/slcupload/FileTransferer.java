@@ -14,9 +14,12 @@ import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 import net.bernerbits.avolve.slcupload.callback.FileTransferCallback;
+import net.bernerbits.avolve.slcupload.handler.ExistingFileHandler;
 import net.bernerbits.avolve.slcupload.model.FileTransferObject;
 import net.bernerbits.avolve.slcupload.model.RemoteFolder;
 import net.bernerbits.avolve.slcupload.model.S3Folder;
+
+import org.eclipse.jdt.annotation.Nullable;
 
 import com.google.common.collect.ConcurrentHashMultiset;
 import com.google.common.collect.HashMultiset;
@@ -32,6 +35,7 @@ public class FileTransferer {
 	private final Semaphore transferPermits = new Semaphore(PERMIT_COUNT, true);
 
 	private final Lock stateLock = new ReentrantLock();
+	@SuppressWarnings("null")
 	private final Condition stateCondition = stateLock.newCondition();
 
 	// Any thread can change the state
@@ -165,6 +169,7 @@ public class FileTransferer {
 			public int characteristics() {
 				return spliterator.characteristics();
 			}
+			
 			@Override
 			public long estimateSize() {
 				if(lockState(() -> state == TransferState.STOPPING)) {
@@ -173,16 +178,18 @@ public class FileTransferer {
 					return spliterator.characteristics();
 				}
 			}
+			
 			@Override
-			public boolean tryAdvance(Consumer<? super T> action) {
+			public boolean tryAdvance(@Nullable Consumer<? super T> action) {
 				if(lockState(() -> state == TransferState.STOPPING)) {
 					return false;
 				} else {
 					return spliterator.tryAdvance(action);
 				}
 			}
+			
 			@Override
-			public Spliterator<T> trySplit() {
+			public @Nullable Spliterator<T> trySplit() {
 				if(lockState(() -> state == TransferState.STOPPING)) {
 					return null;
 				} else {
@@ -192,30 +199,29 @@ public class FileTransferer {
 			}
 		};
 	}
-
 	
 	public void performLocalTransfer(List<FileTransferObject> transferObjects, String folderSource,
-			String folderDestination, FileTransferCallback callback) {
+			String folderDestination, FileTransferCallback callback, ExistingFileHandler handler) {
 		Multiset<Path> pathCounts = ConcurrentHashMultiset.create();
-		withState(transferObjects.stream().map(localFileTransfer(folderSource, folderDestination)),
+		withState(transferObjects.stream().map(localFileTransfer(folderSource, folderDestination, handler)),
 				transfer(pathCounts, callback));
 	}
 
 	public void performRemoteTransfer(List<FileTransferObject> transferObjects, String folderSource,
-			RemoteFolder s3Destination, FileTransferCallback callback) {
+			RemoteFolder s3Destination, FileTransferCallback callback, ExistingFileHandler handler) {
 		S3Folder s3Folder = (S3Folder) s3Destination;
 		Multiset<Path> pathCounts = HashMultiset.create();
-		withState(transferObjects.parallelStream().map(remoteFileTransfer(folderSource, s3Folder)),
+		withState(transferObjects.stream().map(remoteFileTransfer(folderSource, s3Folder, handler)),
 				transfer(pathCounts, callback));
 	}
 
-	private Function<FileTransferObject, FileTransfer> localFileTransfer(String folderSource, String folderDestination) {
-		return (tobj) -> LocalFileTransfer.create(folderSource, folderDestination, tobj);
+	private static Function<FileTransferObject, FileTransfer> localFileTransfer(String folderSource, String folderDestination, ExistingFileHandler handler) {
+		return (tobj) -> LocalFileTransfer.create(folderSource, folderDestination, tobj, handler);
 	}
 
-	private Function<FileTransferObject, FileTransfer> remoteFileTransfer(String folderSource, S3Folder s3Folder) {
+	private static Function<FileTransferObject, FileTransfer> remoteFileTransfer(String folderSource, S3Folder s3Folder, ExistingFileHandler handler) {
 		return (tobj) -> S3FileTransfer.create(folderSource, s3Folder.getCredentials(), s3Folder.getBucketName(),
-				s3Folder.getPrefix(), tobj);
+				s3Folder.getPrefix(), tobj, handler);
 	}
 
 	private Consumer<FileTransfer> transfer(Multiset<Path> pathCounts, FileTransferCallback callback) {

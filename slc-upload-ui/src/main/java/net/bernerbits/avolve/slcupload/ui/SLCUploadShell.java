@@ -31,6 +31,7 @@ import net.bernerbits.avolve.slcupload.util.ThrowingRunnable;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
+import org.eclipse.jdt.annotation.Nullable;
 import org.eclipse.jface.action.StatusLineManager;
 import org.eclipse.jface.dialogs.ErrorDialog;
 import org.eclipse.jface.dialogs.MessageDialog;
@@ -74,6 +75,7 @@ import org.eclipse.swt.widgets.Text;
 import org.eclipse.wb.swt.SWTResourceManager;
 
 import com.google.common.base.Stopwatch;
+import com.sun.istack.internal.NotNull;
 
 public class SLCUploadShell extends Shell {
 	private static final String APP_DISPLAY_NAME = "PlansAnywhere File Transport Manager";
@@ -169,7 +171,7 @@ public class SLCUploadShell extends Shell {
 		Button inputFileSearchButton = new Button(grpInputSource, SWT.PUSH);
 		inputFileSearchButton.addSelectionListener(new SelectionAdapter() {
 			@Override
-			public void widgetSelected(SelectionEvent e) {
+			public void widgetSelected(@Nullable SelectionEvent e) {
 				slcUploadController.spreadsheetFileSearchRequested(SLCUploadShell.this::inputFileSelected);
 			}
 		});
@@ -213,7 +215,7 @@ public class SLCUploadShell extends Shell {
 		Button btnSrcFolder = new Button(grpTransferSource, SWT.PUSH);
 		btnSrcFolder.addSelectionListener(new SelectionAdapter() {
 			@Override
-			public void widgetSelected(SelectionEvent e) {
+			public void widgetSelected(@Nullable SelectionEvent e) {
 				slcUploadController.sourceFolderSearchRequested(SLCUploadShell.this::inputFolderSelected);
 			}
 		});
@@ -254,7 +256,7 @@ public class SLCUploadShell extends Shell {
 		Button btnFolder = new Button(grpTransferDestination, SWT.PUSH);
 		btnFolder.addSelectionListener(new SelectionAdapter() {
 			@Override
-			public void widgetSelected(SelectionEvent e) {
+			public void widgetSelected(@Nullable SelectionEvent e) {
 				slcUploadController.destinationFolderSearchRequested(SLCUploadShell.this::outputFolderSelected);
 			}
 		});
@@ -265,7 +267,7 @@ public class SLCUploadShell extends Shell {
 		Button btnSBucket = new Button(grpTransferDestination, SWT.PUSH);
 		btnSBucket.addSelectionListener(new SelectionAdapter() {
 			@Override
-			public void widgetSelected(SelectionEvent e) {
+			public void widgetSelected(@Nullable SelectionEvent e) {
 				slcUploadController.s3BucketSearchRequested(SLCUploadShell.this::outputBucketSelected);
 			}
 		});
@@ -349,7 +351,7 @@ public class SLCUploadShell extends Shell {
 		checkErrorResultsOnly.setSelection(false);
 		checkErrorResultsOnly.addSelectionListener(new SelectionAdapter() {
 			@Override
-			public void widgetSelected(SelectionEvent e) {
+			public void widgetSelected(@Nullable SelectionEvent e) {
 				toggleErrorResults(checkErrorResultsOnly.getSelection());
 			}
 		});
@@ -373,7 +375,7 @@ public class SLCUploadShell extends Shell {
 		btnStartTransfer.addSelectionListener(new SelectionAdapter() {
 
 			@Override
-			public void widgetSelected(SelectionEvent e) {
+			public void widgetSelected(@Nullable SelectionEvent e) {
 				if (transferInProgress) {
 					resumeTransfer();
 				} else {
@@ -388,7 +390,7 @@ public class SLCUploadShell extends Shell {
 		btnPauseTransfer.setEnabled(false);
 		btnPauseTransfer.addSelectionListener(new SelectionAdapter() {
 			@Override
-			public void widgetSelected(SelectionEvent e) {
+			public void widgetSelected(@Nullable SelectionEvent e) {
 				pauseTransfer();
 			}
 		});
@@ -398,7 +400,7 @@ public class SLCUploadShell extends Shell {
 		btnStopTransfer.setEnabled(false);
 		btnStopTransfer.addSelectionListener(new SelectionAdapter() {
 			@Override
-			public void widgetSelected(SelectionEvent e) {
+			public void widgetSelected(@Nullable SelectionEvent e) {
 				stopTransfer();
 			}
 		});
@@ -436,7 +438,7 @@ public class SLCUploadShell extends Shell {
 		exportItem.setText("Export Results...");
 		exportItem.addSelectionListener(new SelectionAdapter() {
 			@Override
-			public void widgetSelected(SelectionEvent e) {
+			public void widgetSelected(@Nullable SelectionEvent e) {
 				slcUploadController.saveToCSV(SLCUploadShell.this::saveResultsToCsv);
 			}
 		});
@@ -448,7 +450,7 @@ public class SLCUploadShell extends Shell {
 		selAllItem.setAccelerator(SWT.MOD1 | 'A');
 		selAllItem.addSelectionListener(new SelectionAdapter() {
 			@Override
-			public void widgetSelected(SelectionEvent e) {
+			public void widgetSelected(@Nullable SelectionEvent e) {
 				selectAllResults();
 			}
 		});
@@ -458,15 +460,15 @@ public class SLCUploadShell extends Shell {
 		selAllItem.setAccelerator(SWT.MOD1 | 'C');
 		copyItem.addSelectionListener(new SelectionAdapter() {
 			@Override
-			public void widgetSelected(SelectionEvent e) {
+			public void widgetSelected(@NotNull @Nullable SelectionEvent e) {
 				copySelectedResults();
 			}
 		});
 
 		transferResultsTable.getTable().addKeyListener(new KeyAdapter() {
 			@Override
-			public void keyPressed(KeyEvent e) {
-				if (transferIsNotRunning()) {
+			public void keyPressed(@Nullable KeyEvent e) {
+				if (e != null && transferIsNotRunning()) {
 					if ((e.stateMask & (SWT.CTRL | SWT.COMMAND)) != 0) {
 						if (e.keyCode == 'a' || e.keyCode == 'A') {
 							selectAllResults();
@@ -483,38 +485,43 @@ public class SLCUploadShell extends Shell {
 		statusColumn.getColumn().setResizable(true);
 		statusColumn.getColumn().setMoveable(false);
 		statusColumn.getColumn().pack();
-		statusColumn.setLabelProvider(new ClosureColumnLabelProvider<>(FileTransferPresenter::status,
-				FileTransferPresenter::foregroundHint));
+		statusColumn.setLabelProvider(new ClosureColumnLabelProvider<FileTransferPresenter>(
+				FileTransferPresenter::status, FileTransferPresenter::foregroundHint));
 
 		TableViewerColumn duplicateColumn = new TableViewerColumn(transferResultsTable, SWT.NONE);
 		duplicateColumn.getColumn().setText("Dup");
 		duplicateColumn.getColumn().setResizable(true);
 		duplicateColumn.getColumn().setMoveable(false);
 		duplicateColumn.getColumn().pack();
-		duplicateColumn.setLabelProvider(new ClosureColumnLabelProvider<>(FileTransferPresenter::duplicates));
+		duplicateColumn.setLabelProvider(new ClosureColumnLabelProvider<FileTransferPresenter>(
+				FileTransferPresenter::duplicates));
 
 		TableViewerColumn localFileColumn = new TableViewerColumn(transferResultsTable, SWT.NONE);
 		localFileColumn.getColumn().setText("Local path");
 		localFileColumn.getColumn().setResizable(true);
 		localFileColumn.getColumn().setMoveable(false);
 		localFileColumn.getColumn().pack();
-		localFileColumn.setLabelProvider(new ClosureColumnLabelProvider<>(FileTransferPresenter::localPath));
+		localFileColumn.setLabelProvider(new ClosureColumnLabelProvider<FileTransferPresenter>(
+				FileTransferPresenter::localPath));
 
 		TableViewerColumn remotePathColumn = new TableViewerColumn(transferResultsTable, SWT.NONE);
 		remotePathColumn.getColumn().setText("Remote path");
 		remotePathColumn.getColumn().setResizable(true);
 		remotePathColumn.getColumn().setMoveable(false);
 		remotePathColumn.getColumn().pack();
-		remotePathColumn.setLabelProvider(new ClosureColumnLabelProvider<>(FileTransferPresenter::remotePath));
+		remotePathColumn.setLabelProvider(new ClosureColumnLabelProvider<FileTransferPresenter>(
+				FileTransferPresenter::remotePath));
 
 		addListener(SWT.Close, new Listener() {
 			@Override
-			public void handleEvent(Event event) {
-				if (transferInProgress) {
-					event.doit = false;
-					closeWithConfirmation();
-				} else {
-					SWTResourceManager.dispose();
+			public void handleEvent(@Nullable Event event) {
+				if (event != null) {
+					if (transferInProgress) {
+						event.doit = false;
+						closeWithConfirmation();
+					} else {
+						SWTResourceManager.dispose();
+					}
 				}
 			}
 		});
@@ -542,23 +549,23 @@ public class SLCUploadShell extends Shell {
 		private final Table table;
 		private boolean selectionStarted = false;
 
-		private TableItem firstItem;
-		private TableItem lastItem;
+		private @Nullable TableItem firstItem;
+		private @Nullable TableItem lastItem;
 
-		private Timer scrollTimer;
+		private @Nullable Timer scrollTimer;
 
 		public DragListener(Table table) {
 			this.table = table;
 		}
 
 		@Override
-		public void mouseDoubleClick(MouseEvent e) {
+		public void mouseDoubleClick(@Nullable MouseEvent e) {
 			// No-Op
 		}
 
 		@Override
-		public void mouseDown(MouseEvent e) {
-			if (transferIsNotRunning() && e.button == 1
+		public void mouseDown(@Nullable MouseEvent e) {
+			if (transferIsNotRunning() && e != null && e.button == 1
 					&& ((e.stateMask & (SWT.CONTROL | SWT.SHIFT | SWT.COMMAND)) == 0)) {
 
 				Point pt = new Point(e.x, e.y);
@@ -575,7 +582,7 @@ public class SLCUploadShell extends Shell {
 		}
 
 		@Override
-		public void mouseUp(MouseEvent e) {
+		public void mouseUp(@Nullable MouseEvent e) {
 			selectionStarted = false;
 			table.setCapture(false);
 			if (scrollTimer != null) {
@@ -585,8 +592,8 @@ public class SLCUploadShell extends Shell {
 		}
 
 		@Override
-		public void mouseMove(MouseEvent e) {
-			if (selectionStarted) {
+		public void mouseMove(@Nullable MouseEvent e) {
+			if (e != null && selectionStarted) {
 				Point pt = new Point(e.x, e.y);
 
 				TableItem item = table.getItem(pt);
@@ -609,7 +616,7 @@ public class SLCUploadShell extends Shell {
 		}
 
 		@Override
-		public void mouseEnter(MouseEvent e) {
+		public void mouseEnter(@Nullable MouseEvent e) {
 			if (selectionStarted) {
 				table.setCapture(false);
 				if (scrollTimer != null) {
@@ -620,7 +627,7 @@ public class SLCUploadShell extends Shell {
 		}
 
 		@Override
-		public void mouseExit(MouseEvent e) {
+		public void mouseExit(@Nullable MouseEvent e) {
 			if (selectionStarted) {
 				table.setCapture(true);
 
@@ -668,7 +675,7 @@ public class SLCUploadShell extends Shell {
 		}
 
 		@Override
-		public void mouseHover(MouseEvent e) {
+		public void mouseHover(@Nullable MouseEvent e) {
 			// No-op
 		}
 	}
@@ -881,9 +888,16 @@ public class SLCUploadShell extends Shell {
 					final int colInd = col;
 					column.setLabelProvider(new ColumnLabelProvider() {
 						@Override
-						public String getText(Object element) {
-							String text = ((SpreadsheetRow) element).getValues()[colInd];
-							return text;
+						public String getText(@Nullable Object element) {
+							if (element != null)
+							{
+								String text = ((SpreadsheetRow) element).getValues()[colInd];
+								return text;
+							}
+							else
+							{
+								return "";
+							}
 						}
 					});
 					col++;
@@ -904,10 +918,10 @@ public class SLCUploadShell extends Shell {
 				: transferResults;
 
 		busy("Writing \"" + csvFile + "\"...", () -> slcUploadController.writeCsv(csvFile, results,
-				new ColumnDefinition<>("Status", FileTransferPresenter::status), new ColumnDefinition<>("Dup",
-						FileTransferPresenter::duplicates), new ColumnDefinition<>("Local Path",
-						FileTransferPresenter::localPath), new ColumnDefinition<>("Remote Path",
-						FileTransferPresenter::remotePath)));
+				new ColumnDefinition<FileTransferPresenter>("Status", FileTransferPresenter::status),
+				new ColumnDefinition<FileTransferPresenter>("Dup", FileTransferPresenter::duplicates),
+				new ColumnDefinition<FileTransferPresenter>("Local Path", FileTransferPresenter::localPath),
+				new ColumnDefinition<FileTransferPresenter>("Remote Path", FileTransferPresenter::remotePath)));
 	}
 
 	private void inputFolderSelected(String folderPath) {

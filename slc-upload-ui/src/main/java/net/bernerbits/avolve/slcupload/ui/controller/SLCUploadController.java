@@ -2,10 +2,8 @@ package net.bernerbits.avolve.slcupload.ui.controller;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.prefs.Preferences;
 
 import net.bernerbits.avolve.slcupload.FileTransferer;
@@ -18,8 +16,9 @@ import net.bernerbits.avolve.slcupload.dataimport.SpreadsheetImporter;
 import net.bernerbits.avolve.slcupload.dataimport.exception.SpreadsheetImportException;
 import net.bernerbits.avolve.slcupload.dataimport.handler.ErrorHandler;
 import net.bernerbits.avolve.slcupload.dataimport.model.SpreadsheetRow;
-import net.bernerbits.avolve.slcupload.model.FileTransferObject;
+import net.bernerbits.avolve.slcupload.model.ExistingFileOptions;
 import net.bernerbits.avolve.slcupload.model.RemoteFolder;
+import net.bernerbits.avolve.slcupload.ui.ExistingFileDialog;
 import net.bernerbits.avolve.slcupload.ui.S3Dialog;
 import net.bernerbits.avolve.slcupload.ui.handler.BucketHandler;
 import net.bernerbits.avolve.slcupload.ui.handler.ConnectionCheckHandler;
@@ -28,13 +27,21 @@ import net.bernerbits.avolve.slcupload.ui.handler.FileTransferUpdateHandler;
 import net.bernerbits.avolve.slcupload.ui.handler.ProgresssHandler;
 import net.bernerbits.avolve.slcupload.ui.handler.StartConversionHandler;
 import net.bernerbits.avolve.slcupload.ui.handler.ValidationHandler;
-import net.bernerbits.avolve.slcupload.ui.presenter.FileTransferPresenter;
+import net.bernerbits.avolve.slcupload.ui.model.FileSystemFileTransferOperation;
+import net.bernerbits.avolve.slcupload.ui.model.FileTransferOperation;
+import net.bernerbits.avolve.slcupload.ui.model.FileTransferOperationBuilder;
+import net.bernerbits.avolve.slcupload.ui.model.S3FileTransferOperation;
+import net.bernerbits.avolve.slcupload.util.function.NullSafe;
 
+import org.eclipse.jdt.annotation.NonNull;
+import org.eclipse.jdt.annotation.Nullable;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.widgets.DirectoryDialog;
 import org.eclipse.swt.widgets.FileDialog;
 import org.eclipse.swt.widgets.Shell;
+
+import com.google.common.base.Strings;
 
 public class SLCUploadController {
 
@@ -46,20 +53,16 @@ public class SLCUploadController {
 
 	private final FileTransferer transferer;
 
-	private String folderSource;
+	private final FileTransferOperationBuilder transferBuilder;
 
-	private RemoteFolder s3Destination;
-	private String folderDestination;
-
-	private Iterable<SpreadsheetRow> rows;
-
-	private List<FileTransferObject> convertedRows;
+	private @Nullable FileTransferOperation fileTransfer;
 
 	public SLCUploadController(Shell shell) {
 		this.shell = shell;
 		this.importer = new SpreadsheetImporter();
 		this.s3Connector = new S3Connector();
 		this.transferer = new FileTransferer();
+		this.transferBuilder = new FileTransferOperationBuilder();
 	}
 
 	public void spreadsheetFileSearchRequested(FileSelectedHandler handler) {
@@ -79,7 +82,8 @@ public class SLCUploadController {
 	}
 
 	public Iterable<SpreadsheetRow> openSpreadsheet(String inputFile) throws SpreadsheetImportException {
-		rows = importer.importSpreadsheet(inputFile);
+		Iterable<SpreadsheetRow> rows = importer.importSpreadsheet(inputFile);
+		transferBuilder.setRows(rows);
 		return rows;
 	}
 
@@ -94,8 +98,7 @@ public class SLCUploadController {
 		fileDialog.setFilterPath(filterPath);
 		String fileSelected = fileDialog.open();
 		if (fileSelected != null) {
-			s3Destination = null;
-			folderDestination = fileSelected;
+			transferBuilder.setFolderDestination(fileSelected);
 			handler.fileSelected(fileSelected);
 			Preferences.userNodeForPackage(getClass()).put("lastDestFolder", fileSelected);
 		}
@@ -112,7 +115,7 @@ public class SLCUploadController {
 		fileDialog.setFilterPath(filterPath);
 		String fileSelected = fileDialog.open();
 		if (fileSelected != null) {
-			folderSource = fileSelected;
+			transferBuilder.setFolderSource(fileSelected);
 			handler.fileSelected(fileSelected);
 			Preferences.userNodeForPackage(getClass()).put("lastSourceFolder", fileSelected);
 		}
@@ -122,8 +125,7 @@ public class SLCUploadController {
 		S3Dialog s3Dialog = new S3Dialog(this, shell, SWT.OPEN);
 		RemoteFolder locSelected = s3Dialog.open();
 		if (locSelected != null) {
-			s3Destination = locSelected;
-			folderDestination = null;
+			transferBuilder.setS3Destination(locSelected);
 			handler.fileSelected(locSelected.getPath());
 		}
 	}
@@ -138,55 +140,82 @@ public class SLCUploadController {
 
 	public boolean isValidForTransfer(ValidationHandler handler, ErrorHandler errorHandler,
 			StartConversionHandler conversionHandler) {
-		if (rows == null) {
+		fileTransfer = null;
+		if (transferBuilder.getRows() == null) {
 			handler.validationFailed("Please select an input file.");
 			return false;
-		} else if (convertedRows == null && !convertRows(errorHandler, conversionHandler)) {
+		} else if (transferBuilder.getConvertedRows() == null && !convertRows(errorHandler, conversionHandler)) {
 			handler.validationFailed("The input file is not recognized. The following columns must be present: projectid, sourcepath, filename.");
 			return false;
-		} else if (folderSource == null) {
+		} else if (transferBuilder.getFolderSource() == null) {
 			handler.validationFailed("Please select a source folder.");
 			return false;
-		} else if (s3Destination == null && folderDestination == null) {
+		} else if (transferBuilder.getS3Destination() == null && transferBuilder.getFolderDestination() == null) {
 			handler.validationFailed("Please select a destination.");
 			return false;
-		} else if (folderDestination != null && folderSource.equalsIgnoreCase(folderDestination)) {
+		} else if (Strings.nullToEmpty(transferBuilder.getFolderDestination()).equalsIgnoreCase(
+				transferBuilder.getFolderSource())) {
 			handler.validationFailed("Source and destination cannot be the same.");
 			return false;
 		}
+		fileTransfer = transferBuilder.build();
 		return true;
 	}
 
 	private boolean convertRows(ErrorHandler errorHandler, StartConversionHandler handler) {
-		try {
-			convertedRows = importer.convertRows(rows, errorHandler);
-			return true;
-		} catch (SpreadsheetImportException e) {
-			return false;
+		Iterable<SpreadsheetRow> rows = transferBuilder.getRows();
+		if (rows != null) {
+			try {
+				transferBuilder.setConvertedRows(importer.convertRows(rows, errorHandler));
+				return true;
+			} catch (SpreadsheetImportException e) {
+				return false;
+			}
+		} else {
+			throw new IllegalStateException("Could not convert null rows");
 		}
 	}
 
-	private AtomicInteger count = new AtomicInteger(0);
-
 	public void beginTransfer(ProgresssHandler progress, FileTransferUpdateHandler updateHandler) {
-		new Thread(() -> {
-			count.set(0);
-			if (folderDestination != null) {
-				transferer.performLocalTransfer(convertedRows, folderSource, folderDestination, (update) -> shell
-						.getDisplay().syncExec(() -> {
-							float ratio = ((float) count.incrementAndGet()) / convertedRows.size();
-							updateHandler.notifyFileTransfer(update);
-							progress.updateProgress(ratio, count.get() == convertedRows.size());
-						}));
-			} else {
-				transferer.performRemoteTransfer(convertedRows, folderSource, s3Destination, (update) -> shell
-						.getDisplay().syncExec(() -> {
-							float ratio = ((float) count.incrementAndGet()) / convertedRows.size();
-							updateHandler.notifyFileTransfer(update);
-							progress.updateProgress(ratio, count.get() == convertedRows.size());
-						}));
+		if (fileTransfer != null) {
+			synchronized(this) {
+				existingFileOptions = null;
 			}
-		}).start();
+			FileTransferOperation fileTransfer = this.fileTransfer;
+
+			new Thread(() -> {
+				fileTransfer.resetCount();
+				if (fileTransfer instanceof FileSystemFileTransferOperation) {
+					transferer.performLocalTransfer(
+							fileTransfer.getTransferObjects(),
+							fileTransfer.getFolderSource(),
+							((FileSystemFileTransferOperation) fileTransfer).getFolderDestination(),
+							(update) -> shell.getDisplay().syncExec(
+									() -> {
+										float ratio = ((float) fileTransfer.updateCount())
+												/ fileTransfer.getTransferObjects().size();
+										updateHandler.notifyFileTransfer(update);
+										progress.updateProgress(ratio, fileTransfer.isComplete());
+									}),
+							SLCUploadController.this::getExistingFileOptions);
+				} else if (fileTransfer instanceof S3FileTransferOperation) {
+					transferer.performRemoteTransfer(
+							fileTransfer.getTransferObjects(),
+							fileTransfer.getFolderSource(),
+							((S3FileTransferOperation) fileTransfer).getS3Destination(),
+							(update) -> shell.getDisplay().syncExec(
+									() -> {
+										float ratio = ((float) fileTransfer.updateCount())
+												/ fileTransfer.getTransferObjects().size();
+										updateHandler.notifyFileTransfer(update);
+										progress.updateProgress(ratio, fileTransfer.isComplete());
+									}),
+									SLCUploadController.this::getExistingFileOptions);
+				}
+			}).start();
+		} else {
+			throw new IllegalStateException("Cannot begin transfer: convertedRows or folderSource is null");
+		}
 	}
 
 	public void resumeTransfer() {
@@ -194,13 +223,30 @@ public class SLCUploadController {
 	}
 
 	public void pauseTransfer() {
-		transferer.pauseTransfer();		
+		transferer.pauseTransfer();
 	}
-	
+
 	public void stopTransfer() {
-		transferer.stopTransfer();		
+		transferer.stopTransfer();
 	}
+
+	private ExistingFileOptions existingFileOptions = null;
 	
+	public synchronized ExistingFileOptions getExistingFileOptions(Path existingFile) {
+		ExistingFileOptions existingFileOptions = this.existingFileOptions;
+		if (existingFileOptions == null)
+		{
+			AtomicReference<ExistingFileOptions> val = new AtomicReference<>();
+			shell.getDisplay().syncExec(() -> val.set(new ExistingFileDialog(shell, SWT.OPEN).open(existingFile)));
+			existingFileOptions = val.get();
+			if (existingFileOptions.isRemember())
+			{
+				this.existingFileOptions = existingFileOptions;
+			}
+		}
+		return existingFileOptions;
+	}
+
 	public final <T> void saveToCSV(FileSelectedHandler handler) {
 		FileDialog fileDialog = new FileDialog(shell, SWT.SAVE);
 		fileDialog.setFilterNames(new String[] { "Comma-Delimited Values (*.csv)" });
@@ -214,7 +260,7 @@ public class SLCUploadController {
 		String fileSelected = fileDialog.open();
 
 		if (fileSelected != null) {
-			Path pathSelected = Paths.get(fileSelected);
+			Path pathSelected = NullSafe.getPath(fileSelected);
 			if (!Files.exists(pathSelected) || confirmOverwrite(pathSelected)) {
 				handler.fileSelected(fileSelected);
 			}
@@ -226,17 +272,25 @@ public class SLCUploadController {
 	}
 
 	public int getTransferCount() {
-		return count.get();
+		if (fileTransfer != null) {
+			return fileTransfer.currentCount();
+		} else {
+			throw new IllegalStateException("File transfer is not yet valid");
+		}
 	}
 
 	public int getTotalCount() {
-		return convertedRows.size();
+		if (fileTransfer != null) {
+			return fileTransfer.getTransferObjects().size();
+		} else {
+			throw new IllegalStateException("File transfer is not yet valid");
+		}
 	}
 
 	@SafeVarargs
-	public final <T> Object writeCsv(String csvFile, List<T> results, ColumnDefinition<T>... columnDefinitions) throws FileExportException {
-		new CSVExporter<T>().export(Paths.get(csvFile), results, columnDefinitions);
-		return null;
+	public final static <T> void writeCsv(String csvFile, List<@NonNull T> results,
+			ColumnDefinition<T>... columnDefinitions) throws FileExportException {
+		new CSVExporter<T>().export(NullSafe.getPath(csvFile), results, columnDefinitions);
 	}
 
 }

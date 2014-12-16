@@ -24,6 +24,8 @@ import org.eclipse.swt.graphics.PaletteData;
 import org.eclipse.swt.graphics.RGB;
 import org.eclipse.swt.widgets.Display;
 
+import sun.awt.shell.ShellFolder;
+
 public class FileIcons {
 	public static ImageData convertToSWT(BufferedImage bufferedImage) {
 		if (bufferedImage.getColorModel() instanceof DirectColorModel) {
@@ -69,8 +71,10 @@ public class FileIcons {
 				}
 			}
 			return data;
+		} else {
+			throw new IllegalArgumentException(bufferedImage.getColorModel().getClass()
+					+ " is a supported color model.");
 		}
-		return null;
 	}
 
 	public static Image getFolderImage() throws IOException {
@@ -86,22 +90,28 @@ public class FileIcons {
 		return convertToSWT(image);
 	}
 
-	public static Image getTextFileImage() throws IOException {
-		File tempDir;
+	public static Image getDefaultFileImage() {
+		File tempFile;
 		try {
-			tempDir = File.createTempFile("tmp", ".txt");
+			tempFile = File.createTempFile("tmp", "");
 			try {
-				ImageIcon systemIcon = (ImageIcon) FileSystemView.getFileSystemView().getSystemIcon(tempDir.getParentFile());
-				java.awt.Image image = systemIcon.getImage();
-				return convertToSWT(image);
+				return getFileImage(tempFile);
 			} finally {
-				tempDir.delete();				
+				tempFile.delete();
 			}
 		} catch (IOException e) {
 			throw new ExceptionInInitializerError(e);
 		}
 	}
-	
+
+	public static Image getFileImage(File file) throws IOException {
+		ShellFolder sf = ShellFolder.getShellFolder(file);
+
+		ImageIcon systemIcon = new ImageIcon(sf.getIcon(true), sf.getFolderType());
+		java.awt.Image image = systemIcon.getImage();
+		return convertToSWT(image);
+	}
+
 	public static Image getBucketImage(int size) throws IOException {
 		String bucketSvg = "<?xml version=\"1.0\" encoding=\"utf-16\"?>\n"
 				+ "<!-- Generator: Adobe Illustrator 14.0.0, SVG Export Plug-In . SVG Version: 6.00 Build 43363)  -->\n"

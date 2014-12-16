@@ -3,12 +3,16 @@ package net.bernerbits.avolve.slcupload.ui.util;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import net.bernerbits.avolve.slcupload.ui.model.ClipboardData;
+import net.bernerbits.avolve.slcupload.ui.model.ColoredText;
+import net.bernerbits.avolve.slcupload.util.function.IndexFunction;
+import net.bernerbits.avolve.slcupload.util.function.NullSafe;
+
+import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.swt.dnd.HTMLTransfer;
 import org.eclipse.swt.dnd.TextTransfer;
 import org.eclipse.swt.dnd.Transfer;
@@ -18,10 +22,6 @@ import org.eclipse.swt.widgets.TableItem;
 
 import com.google.common.collect.ImmutableMap;
 
-import net.bernerbits.avolve.slcupload.ui.model.ClipboardData;
-import net.bernerbits.avolve.slcupload.ui.model.ColoredText;
-import net.bernerbits.avolve.slcupload.util.function.IndexFunction;
-
 public class ClipboardDataProvider {
 
 	private Display display;
@@ -29,26 +29,30 @@ public class ClipboardDataProvider {
 	public ClipboardDataProvider(Display display) {
 		this.display = display;
 	}
-	
-	private static interface TransferDataBuilder<T> {
-		public T buildTransferData(TableColumn[] columns, TableItem[] selectedRows);
+
+	private static interface TransferDataBuilder {
+		public Object buildTransferData(@NonNull TableColumn[] columns, @NonNull TableItem[] selectedRows);
 	}
 
-	private final Map<Transfer, TransferDataBuilder<? extends Object>> transfers = new ImmutableMap.Builder<Transfer, TransferDataBuilder<? extends Object>>()
-			.put(TextTransfer.getInstance(), this::textTransfer).put(HTMLTransfer.getInstance(), this::htmlTransfer)
+	@SuppressWarnings("null")
+	private final Map<Transfer, TransferDataBuilder> transfers = 
+		new ImmutableMap.Builder<Transfer, TransferDataBuilder>()
+			.put(TextTransfer.getInstance(), this::textTransfer)
+			.put(HTMLTransfer.getInstance(), this::htmlTransfer)
 			.build();
 
-	public ClipboardData toClipboardData(TableColumn[] columns, TableItem[] selection) {
+	@SuppressWarnings("null")
+	public ClipboardData toClipboardData(@NonNull TableColumn[] columns, @NonNull TableItem[] selection) {
 		return new ClipboardData(transfers.values().stream().map((v) -> v.buildTransferData(columns, selection))
 				.toArray(), transfers.keySet().toArray(new Transfer[0]));
 	}
 
-	public String textTransfer(TableColumn[] columns, TableItem[] selectedRows) {
+	public String textTransfer(@NonNull TableColumn[] columns, @NonNull TableItem[] selectedRows) {
 		return createTransferData(columns, selectedRows, ",", "\r\n", (b) -> b, (h) -> h, (r) -> r, (hf) -> "\"" + hf
 				+ "\"", (rf) -> "\"" + rf.getText() + "\"");
 	}
 
-	public String htmlTransfer(TableColumn[] columns, TableItem[] selectedRows) {
+	public String htmlTransfer(@NonNull TableColumn[] columns, @NonNull TableItem[] selectedRows) {
 		return createTransferData(
 				columns,
 				selectedRows,
@@ -63,20 +67,28 @@ public class ClipboardDataProvider {
 								.getBlue()) + "\">" + rf.getText() + "</font></td>");
 	}
 
-	private String createTransferData(TableColumn[] columns, TableItem[] selectedRows, String colDelim,
-			String rowDelim, Function<String, String> bodyDecorator, Function<String, String> headerDecorator,
+	private String createTransferData(@NonNull TableColumn[] columns,
+			@NonNull TableItem [] selectedRows, String colDelim, String rowDelim,
+			Function<String, String> bodyDecorator, Function<String, String> headerDecorator,
 			Function<String, String> rowDecorator, Function<String, String> headerFieldDecorator,
 			Function<ColoredText, String> rowFieldDecorator) {
-		List<String> headers = Arrays.stream(columns).map((c) -> sync(() -> c.getText())).collect(Collectors.toList());
 
-		Stream<List<ColoredText>> rowStream = Arrays.stream(selectedRows).map(
-				(r) -> Arrays.stream(columns).mapToInt(IndexFunction.function())
-						.mapToObj((c) -> new ColoredText(sync(() -> r.getText(c)), sync(() -> r.getForeground(c))))
-						.collect(Collectors.toList()));
+		List<String> headers = Arrays.stream(columns).map((c) -> sync(() -> c.getText()))
+				.collect(NullSafe.toListCollector());
+		
+		@SuppressWarnings("null")
+		@NonNull Stream<List<ColoredText>> rowStream = Arrays.stream(selectedRows).map(
+				(r) -> getData(columns, r));
 
 		return createTransferData(headers, rowStream, colDelim, rowDelim, bodyDecorator, headerDecorator, rowDecorator,
 				headerFieldDecorator, rowFieldDecorator);
 
+	}
+
+	private List<@NonNull ColoredText> getData(TableColumn[] columns, TableItem row) {
+		return Arrays.stream(columns).mapToInt(IndexFunction.function())
+				.mapToObj((c) -> sync(() -> new ColoredText(row.getText(c), row.getForeground(c))))
+				.collect(NullSafe.toListCollector());
 	}
 
 	private static String createTransferData(List<String> headers, Stream<List<ColoredText>> rowStream,
@@ -91,12 +103,12 @@ public class ClipboardDataProvider {
 
 		sb.append(rowStream.map(
 				(columns) -> rowDecorator.apply(columns.stream().map((c) -> rowFieldDecorator.apply(c))
-						.reduce(null, (r, f) -> r == null ? f : r + colDelim + f))).reduce(null,
-				(t, r) -> t == null ? r : t + rowDelim + r));
+						.reduce("", (r, f) -> r.isEmpty() ? f : r + colDelim + f))).reduce("",
+				(t, r) -> t.isEmpty() ? r : t + rowDelim + r));
 
-		return bodyDecorator.apply(sb.toString());
+		return bodyDecorator.apply(NullSafe.toString(sb));
 	}
-	
+
 	@SuppressWarnings("unchecked")
 	private <T> T sync(Supplier<T> callToSync) {
 		final Object[] ref = new Object[1];
