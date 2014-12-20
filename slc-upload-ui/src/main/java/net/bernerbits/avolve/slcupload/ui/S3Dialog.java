@@ -2,6 +2,7 @@ package net.bernerbits.avolve.slcupload.ui;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.prefs.Preferences;
 
 import net.bernerbits.avolve.slcupload.model.RemoteFolder;
@@ -10,12 +11,19 @@ import net.bernerbits.avolve.slcupload.ui.util.FileIcons;
 
 import org.eclipse.jdt.annotation.Nullable;
 import org.eclipse.jface.viewers.IStructuredSelection;
+import org.eclipse.jface.viewers.ITreeViewerListener;
+import org.eclipse.jface.viewers.TreeExpansionEvent;
 import org.eclipse.jface.viewers.TreeViewer;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.CLabel;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
+import org.eclipse.swt.events.TreeEvent;
+import org.eclipse.swt.events.TreeListener;
+import org.eclipse.swt.graphics.Color;
+import org.eclipse.swt.graphics.Font;
 import org.eclipse.swt.graphics.Image;
+import org.eclipse.swt.graphics.RGB;
 import org.eclipse.swt.layout.FormAttachment;
 import org.eclipse.swt.layout.FormData;
 import org.eclipse.swt.layout.FormLayout;
@@ -23,6 +31,7 @@ import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Dialog;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Listener;
 import org.eclipse.swt.widgets.ProgressBar;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Text;
@@ -36,16 +45,16 @@ public class S3Dialog extends Dialog {
 	private static Image folderIcon;
 	private static Image bucketIcon;
 	static {
-	    try {
-	    	folderIcon = FileIcons.getFolderImage();
+		try {
+			folderIcon = FileIcons.getFolderImage();
 			bucketIcon = FileIcons.getBucketImage(folderIcon.getBounds().height);
 		} catch (IOException e) {
 			throw new ExceptionInInitializerError(e);
 		}
-	}	
-	
+	}
+
 	protected @Nullable RemoteFolder result;
-	
+
 	protected Shell shell;
 	private Text awsKeyText;
 	private Text awsSecretText;
@@ -127,7 +136,7 @@ public class S3Dialog extends Dialog {
 		awsSecretText.setText(Preferences.userNodeForPackage(SLCUploadUI.class).get("aws_secret", ""));
 		awsSecretText.addModifyListener((e) -> Preferences.userNodeForPackage(SLCUploadUI.class).put("aws_secret",
 				awsSecretText.getText() == null ? "" : awsSecretText.getText()));
-		awsKeyText.addModifyListener((e) -> checkS3Connection());
+		awsSecretText.addModifyListener((e) -> checkS3Connection());
 		fd_awsKeyText.right = new FormAttachment(awsSecretText, 0, SWT.RIGHT);
 		fd_awsKeyText.bottom = new FormAttachment(awsSecretText, -6);
 		FormData fd_awsSecretText = new FormData();
@@ -182,8 +191,24 @@ public class S3Dialog extends Dialog {
 		s3BucketTree.addDoubleClickListener((e) -> finish((RemoteFolder) ((IStructuredSelection) e.getSelection())
 				.getFirstElement()));
 		s3BucketTree.addSelectionChangedListener((e) -> okButton.setEnabled(!e.getSelection().isEmpty()));
+		s3BucketTree.getTree().addTreeListener(new TreeListener() {
+
+			@Override
+			public void treeExpanded(TreeEvent e) {
+				for (Listener l : e.item.getListeners(SWT.Expand)) {
+					l.handleEvent(null);
+				}
+			}
+
+			@Override
+			public void treeCollapsed(TreeEvent e) {
+				for (Listener l : e.item.getListeners(SWT.Collapse)) {
+					l.handleEvent(null);
+				}
+			}
+		});
 		tree.setVisible(false);
-		
+
 		s3StatusLabel = new CLabel(shell, SWT.BORDER | SWT.WRAP);
 		s3StatusLabel.setAlignment(SWT.CENTER);
 		FormData fd_lblConnectingToS = new FormData();
@@ -194,7 +219,7 @@ public class S3Dialog extends Dialog {
 		s3StatusLabel.setLayoutData(fd_lblConnectingToS);
 		s3StatusLabel.setText("Connecting to S3...");
 		s3StatusLabel.setVisible(true);
-		
+
 		checkS3Connection();
 	}
 
@@ -212,18 +237,14 @@ public class S3Dialog extends Dialog {
 			checkInProgress = true;
 			String awsKey = awsKeyText.getText();
 			String awsSecret = awsSecretText.getText();
-			
-			if (Strings.isNullOrEmpty(awsKey) || Strings.isNullOrEmpty(awsSecret))
-			{
+
+			if (Strings.isNullOrEmpty(awsKey) || Strings.isNullOrEmpty(awsSecret)) {
 				s3StatusLabel.setText("Please enter your S3 credentials.");
 				checkInProgress = false;
 				progress.setVisible(false);
-			}
-			else
-			{
-				new Thread(() -> uploadController.listBuckets(awsKey, awsSecret,
-						this::connectionCheckFinished, this::populateBucketTree)).start();
-				;
+			} else {
+				new Thread(() -> uploadController.listBuckets(awsKey, awsSecret, this::connectionCheckFinished,
+						this::populateBucketTree)).start();
 			}
 		} else {
 			checkNeeded = true;
@@ -252,7 +273,7 @@ public class S3Dialog extends Dialog {
 
 	private void populateBucketTree(List<RemoteFolder> buckets) {
 		shell.getDisplay().syncExec(() -> {
-			for(TreeItem item : s3BucketTree.getTree().getItems()) {
+			for (TreeItem item : s3BucketTree.getTree().getItems()) {
 				item.dispose();
 			}
 			for (RemoteFolder bucket : buckets) {
@@ -260,7 +281,8 @@ public class S3Dialog extends Dialog {
 				item.setText(bucket.getName());
 				item.setData(bucket);
 				item.setImage(bucketIcon);
-				populateTreeItem(item, bucket.getChildren());
+
+				populateTreeItemOnExpand(item, bucket);
 			}
 		});
 	}
@@ -271,10 +293,30 @@ public class S3Dialog extends Dialog {
 			item.setText(bucket.getName());
 			item.setData(bucket);
 			item.setImage(folderIcon);
-			populateTreeItem(item, bucket.getChildren());
+			
+			populateTreeItemOnExpand(item, bucket);
 		}
 	}
 
+	private void populateTreeItemOnExpand(TreeItem parent, RemoteFolder bucket) {
+		TreeItem placeHolder = new TreeItem(parent, SWT.NONE);
+		placeHolder.setText("Loading...");
+		placeHolder.setData(new Object());
+		placeHolder.setForeground(SWTResourceManager.getColor(0x80,0x80,0x80));
+		placeHolder.setFont(SWTResourceManager.getItalicFont(placeHolder.getFont()));
+		placeHolder.setGrayed(true);
+		
+		AtomicBoolean initialized = new AtomicBoolean(false);
+		parent.addListener(SWT.Expand, (e) -> {
+			if (!initialized.getAndSet(true)) {
+				shell.getDisplay().asyncExec(() -> {
+					populateTreeItem(parent, bucket.getChildren()); 
+					placeHolder.dispose();
+				});
+			}
+		});
+	}
+	
 	private void finish(@Nullable RemoteFolder result) {
 		this.result = result;
 		shell.dispose();

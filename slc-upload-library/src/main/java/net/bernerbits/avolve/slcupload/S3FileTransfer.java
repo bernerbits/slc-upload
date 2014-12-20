@@ -15,6 +15,7 @@ import net.bernerbits.avolve.slcupload.handler.ExistingFileHandler;
 import net.bernerbits.avolve.slcupload.model.FileTransferObject;
 import net.bernerbits.avolve.slcupload.util.function.NullSafe;
 
+import com.amazonaws.AmazonServiceException;
 import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.model.AmazonS3Exception;
@@ -25,7 +26,6 @@ public class S3FileTransfer extends RealFileTransfer {
 
 	private static ThreadLocal<AWSCredentials> creds = new ThreadLocal<>();
 	private static ThreadLocal<AmazonS3Client> client = new ThreadLocal<>();
-	private static final Map<String, SoftReference<Set<String>>> objCache = new ConcurrentHashMap<>();
 
 	private AWSCredentials credentials;
 	private String bucket;
@@ -57,15 +57,13 @@ public class S3FileTransfer extends RealFileTransfer {
 		try {
 			String remoteDest = prefix + (prefix.isEmpty() ? "" : "/") + getRemotePath();
 			boolean skip = false;
-			Set<String> summaries = getSummaries();
 			
-			if (summaries.contains(remoteDest.toLowerCase())) {
+			if (remoteDestExists(remoteDest)) {
 				skip = existingFileHandler.getOptions(getPath()).isSkip();
 			}
 
 			if (!skip) {
 				getClient(credentials).putObject(bucket, remoteDest, getPath().toFile());
-				summaries.add(remoteDest);
 				status = "\u2713";
 			} else {
 				status = "Skipped - File exists";
@@ -77,24 +75,15 @@ public class S3FileTransfer extends RealFileTransfer {
 		}
 	}
 
-	private Set<String> getSummaries() {
-		synchronized(objCache)
-		{
-			SoftReference<Set<String>> ref = objCache.get(bucket);
-			Set<String> summaries = ref == null ? null : ref.get();
-			if (summaries == null) {
-				ObjectListing listing = getClient(credentials).listObjects(bucket);
-				summaries = new ConcurrentSkipListSet<>(listing.getObjectSummaries().stream()
-						.map((os) -> os.getKey().toLowerCase()).collect(NullSafe.toListCollector()));
-				while (listing.isTruncated()) {
-					listing = getClient(credentials).listNextBatchOfObjects(listing);
-					summaries.addAll(listing.getObjectSummaries().stream()
-							.map((os) -> os.getKey().toLowerCase()).collect(NullSafe.toListCollector()));
-				}
-				ref = new SoftReference<>(summaries);
-				objCache.put(bucket, ref);
+	private boolean remoteDestExists(String remoteDest) {
+		try {
+			getClient(credentials).getObjectMetadata(bucket, remoteDest);
+			return true;
+		} catch(AmazonServiceException e) {
+			if(e.getStatusCode() == 404) {
+				return false;
 			}
-			return summaries;
+			throw e;
 		}
 	}
 

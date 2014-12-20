@@ -8,6 +8,7 @@ import java.util.Map;
 import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.model.Bucket;
+import com.amazonaws.services.s3.model.ListObjectsRequest;
 import com.amazonaws.services.s3.model.ObjectListing;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
 
@@ -42,53 +43,26 @@ public class S3RootBucketFolder extends S3Folder {
 
 	private void generateChildren() {
 		children = new ArrayList<>();
-		Map<String, S3BucketChildFolder> folders = new HashMap<>();
-		
-		ObjectListing listing = client.listObjects(bucket.getName());
-		for (S3ObjectSummary object : getAllObjectSummaries(listing)) {
-			if (object.getKey().contains("/"))
-			{
-				String folderName = object.getKey().substring(0, object.getKey().lastIndexOf("/"));
-				addChild(folders, folderName);
-			}
+
+		ListObjectsRequest req = new ListObjectsRequest(bucket.getName(), "", "", "/", 1000);
+		ObjectListing listing = client.listObjects(req);
+		for (String prefix : getAllCommonPrefixes(listing)) {
+			addChild(prefix.substring(0, prefix.length() - 1));
 		}
 	}
 
-	private List<S3ObjectSummary> getAllObjectSummaries(ObjectListing listing) {
-		List<S3ObjectSummary> summaries = new ArrayList<>(listing.getObjectSummaries());
-		while (listing.isTruncated())
-		{
+	private List<String> getAllCommonPrefixes(ObjectListing listing) {
+		List<String> summaries = new ArrayList<>(listing.getCommonPrefixes());
+		while (listing.isTruncated()) {
 			listing = client.listNextBatchOfObjects(listing);
-			summaries.addAll(listing.getObjectSummaries());
+			summaries.addAll(listing.getCommonPrefixes());
 		}
 		return summaries;
 	}
 
-	private void addChild(Map<String, S3BucketChildFolder> folders,
-			String folderName) {
-		S3Folder parent;
-		String localFolderName;
-		if (folderName.contains("/"))
-		{
-			String parentFolderName = folderName.substring(0, folderName.lastIndexOf("/"));
-			if (!folders.containsKey(parentFolderName))
-			{
-				addChild(folders, parentFolderName);
-			}
-			localFolderName = folderName.substring(folderName.lastIndexOf("/") + 1);
-			parent = folders.get(parentFolderName);
-		}
-		else
-		{
-			localFolderName = folderName;
-			parent = this;
-		}
-		if(!folders.containsKey(folderName))
-		{
-			S3BucketChildFolder folder = new S3BucketChildFolder(parent, localFolderName);
-			folders.put(folderName, folder);
-			parent.getChildren().add(folder);
-		}
+	private void addChild(String folderName) {
+		S3BucketChildFolder folder = new S3BucketChildFolder(this, folderName, client);
+		children.add(folder);
 	}
 
 	@Override
