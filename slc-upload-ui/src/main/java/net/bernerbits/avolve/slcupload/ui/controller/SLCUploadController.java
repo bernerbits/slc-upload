@@ -26,6 +26,7 @@ import net.bernerbits.avolve.slcupload.ui.handler.FileSelectedHandler;
 import net.bernerbits.avolve.slcupload.ui.handler.FileTransferUpdateHandler;
 import net.bernerbits.avolve.slcupload.ui.handler.ProgresssHandler;
 import net.bernerbits.avolve.slcupload.ui.handler.StartConversionHandler;
+import net.bernerbits.avolve.slcupload.ui.handler.UserInputHandler;
 import net.bernerbits.avolve.slcupload.ui.handler.ValidationHandler;
 import net.bernerbits.avolve.slcupload.ui.model.FileSystemFileTransferOperation;
 import net.bernerbits.avolve.slcupload.ui.model.FileTransferOperation;
@@ -56,6 +57,7 @@ public class SLCUploadController {
 	private final FileTransferOperationBuilder transferBuilder;
 
 	private @Nullable FileTransferOperation fileTransfer;
+	private @Nullable UserInputHandler userInputHandler;
 
 	public SLCUploadController(Shell shell) {
 		this.shell = shell;
@@ -147,6 +149,9 @@ public class SLCUploadController {
 		} else if (transferBuilder.getConvertedRows() == null && !convertRows(errorHandler, conversionHandler)) {
 			handler.validationFailed("The input file is not recognized. The following columns must be present: projectid, sourcepath, filename.");
 			return false;
+		} else if (transferBuilder.getConvertedRows().isEmpty()) {
+			handler.validationFailed("The input file is empty or contains no valid file records.");
+			return false;
 		} else if (transferBuilder.getFolderSource() == null) {
 			handler.validationFailed("Please select a source folder.");
 			return false;
@@ -176,13 +181,14 @@ public class SLCUploadController {
 		}
 	}
 
-	public void beginTransfer(ProgresssHandler progress, FileTransferUpdateHandler updateHandler) {
+	public void beginTransfer(ProgresssHandler progress, FileTransferUpdateHandler updateHandler, UserInputHandler userInputHandler) {
 		if (fileTransfer != null) {
 			synchronized(this) {
 				existingFileOptions = null;
 			}
 			FileTransferOperation fileTransfer = this.fileTransfer;
-
+			this.userInputHandler = userInputHandler;
+			
 			new Thread(() -> {
 				fileTransfer.resetCount();
 				if (fileTransfer instanceof FileSystemFileTransferOperation) {
@@ -237,7 +243,7 @@ public class SLCUploadController {
 		if (existingFileOptions == null)
 		{
 			AtomicReference<ExistingFileOptions> val = new AtomicReference<>();
-			shell.getDisplay().syncExec(() -> val.set(new ExistingFileDialog(shell, SWT.OPEN).open(existingFile)));
+			userInputHandler.sync(() -> val.set(new ExistingFileDialog(shell, SWT.OPEN).open(existingFile)));
 			existingFileOptions = val.get();
 			if (existingFileOptions.isRemember())
 			{

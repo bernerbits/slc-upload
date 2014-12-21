@@ -119,6 +119,14 @@ public class SLCUploadShell extends Shell {
 
 	private Clipboard clipboard;
 
+	private Group grpTransferSource;
+
+	private Group grpInputSource;
+
+	private Group grpTransferDestination;
+
+	private Label topLogo;
+
 	public SLCUploadShell(Display display) {
 		super(display, SWT.SHELL_TRIM);
 		slcUploadController = new SLCUploadController(this);
@@ -127,7 +135,7 @@ public class SLCUploadShell extends Shell {
 
 		setLayout(new FormLayout());
 
-		Label topLogo = new Label(this, SWT.NONE);
+		topLogo = new Label(this, SWT.NONE);
 		topLogo.setImage(SWTResourceManager.getImage(SLCUploadShell.class, "/ftm-logo.png"));
 		topLogo.setBackground(SWTResourceManager.getColor(new RGB(0x1B, 0x3E, 0x64)));
 		FormData fd_topLabel = new FormData();
@@ -144,7 +152,7 @@ public class SLCUploadShell extends Shell {
 		fd_logoSpace.bottom = new FormAttachment(topLogo, 0, SWT.BOTTOM);
 		logoSpace.setLayoutData(fd_logoSpace);
 
-		Group grpInputSource = new Group(this, SWT.NONE);
+		grpInputSource = new Group(this, SWT.NONE);
 		FormData fd_grpInputSource = new FormData();
 		fd_grpInputSource.top = new FormAttachment(topLogo, 10);
 		fd_grpInputSource.left = new FormAttachment(0, 10);
@@ -201,7 +209,7 @@ public class SLCUploadShell extends Shell {
 		fd_sheetPreviewTable.right = new FormAttachment(100, -10);
 		table.setLayoutData(fd_sheetPreviewTable);
 
-		Group grpTransferSource = new Group(this, SWT.NONE);
+		grpTransferSource = new Group(this, SWT.NONE);
 		grpTransferSource.setText("File Source");
 		grpTransferSource.setLayout(new FormLayout());
 		FormData fd_grpTransferSource = new FormData();
@@ -242,7 +250,7 @@ public class SLCUploadShell extends Shell {
 		fd_lblSrcLocation.bottom = new FormAttachment(inputLocationField, 0, SWT.BOTTOM);
 		fd_lblSrcLocation.top = new FormAttachment(inputLocationField, 0, SWT.TOP);
 
-		Group grpTransferDestination = new Group(this, SWT.NONE);
+		grpTransferDestination = new Group(this, SWT.NONE);
 		grpTransferDestination.setText("Transfer Destination");
 		grpTransferDestination.setLayout(new FormLayout());
 		FormData fd_grpTransferDestination = new FormData();
@@ -712,8 +720,35 @@ public class SLCUploadShell extends Shell {
 			fileTransferUpdate(transfer);
 		}
 		transferStopwatch = Stopwatch.createStarted();
+		
+		hideInputFields();
+		
 		status.setMessage("Starting transfer ...");
-		slcUploadController.beginTransfer(SLCUploadShell.this::updateProgress, SLCUploadShell.this::fileTransferUpdate);
+		slcUploadController.beginTransfer(SLCUploadShell.this::updateProgress, SLCUploadShell.this::fileTransferUpdate, SLCUploadShell.this::syncUserInput);
+	}
+
+	private void hideInputFields() {
+		grpInputSource.setVisible(false);
+		grpTransferSource.setVisible(false);
+		grpTransferDestination.setVisible(false);
+		lblValidationErrors.setVisible(false);
+		
+		FormData fd = (FormData)fileTransferGroup.getLayoutData();
+		fd.top = new FormAttachment(topLogo, 10);
+		
+		layout(true);
+	}
+
+	private void showInputFields() {
+		FormData fd = (FormData)fileTransferGroup.getLayoutData();
+		fd.top = new FormAttachment(lblValidationErrors, 5);
+
+		grpInputSource.setVisible(true);
+		grpTransferSource.setVisible(true);
+		grpTransferDestination.setVisible(true);
+		lblValidationErrors.setVisible(true);
+
+		layout(true);
 	}
 
 	protected void resumeTransfer() {
@@ -939,7 +974,10 @@ public class SLCUploadShell extends Shell {
 	private void checkValidForTransfer() {
 		boolean valid = slcUploadController.isValidForTransfer(this::setValidationMessage, this::handleConversionError,
 				this::conversionStarted);
-		lblValidationErrors.setVisible(!valid);
+		if (valid)
+		{
+			lblValidationErrors.setText("");
+		}
 		recursiveSetEnabled(fileTransferGroup, valid);
 		btnPauseTransfer.setEnabled(false);
 		btnStopTransfer.setEnabled(false);
@@ -965,7 +1003,6 @@ public class SLCUploadShell extends Shell {
 
 	private void setValidationMessage(String message) {
 		lblValidationErrors.setText(message);
-		lblValidationErrors.setVisible(true);
 	}
 
 	private void updateProgress(double progress, boolean complete) {
@@ -975,13 +1012,45 @@ public class SLCUploadShell extends Shell {
 		if (complete) {
 			setTransferActive(false);
 			transferHasEnded();
-			status.setMessage("Transfer complete");
+			status.setMessage("Transfer complete! " + convertSecondsToElapsedTime(transferStopwatch.elapsed(TimeUnit.SECONDS)));
 		} else if (!transferIsPaused) {
 			updateStatusLine(progress);
 		}
 	}
 
+	private static String convertSecondsToElapsedTime(long elapsed) {
+		int seconds = (int) elapsed;
+		int minutes = seconds / 60;
+		seconds %= 60;
+		int hours = minutes / 60;
+		minutes %= 60;
+		int days = hours / 24;
+		hours %= 24;
+		int years = days / 365;
+		days %= 365;
+		
+		StringBuilder sb = new StringBuilder();
+		if (years > 0) {
+			sb.append(years).append(" year").append(years > 1 ? "s " : " ");
+		}
+		if (days > 0) {
+			sb.append(days).append(" day").append(days > 1 ? "s " : " ");
+		}
+		if (hours > 0) {
+			sb.append(hours).append(" hour").append(hours > 1 ? "s " : " ");
+		}
+		if (minutes > 0) {
+			sb.append(minutes).append(" minute").append(minutes > 1 ? "s " : " ");
+		}
+		if (seconds > 0) {
+			sb.append(seconds).append(" second").append(seconds > 1 ? "s " : " ");
+		}
+		
+		return sb.toString();
+	}
+
 	private void transferHasEnded() {
+		showInputFields();
 		transferInProgress = false;
 
 		// Stopwatch may have been stopped previously by a pause operation.
@@ -1089,6 +1158,15 @@ public class SLCUploadShell extends Shell {
 			for (TableColumn column : transferResultsTable.getTable().getColumns()) {
 				column.pack();
 			}
+		}
+	}
+
+	private void syncUserInput(Runnable inputTask) {
+		transferStopwatch.stop();
+		try {
+			getDisplay().syncExec(inputTask);
+		} finally {
+			transferStopwatch.start();
 		}
 	}
 
