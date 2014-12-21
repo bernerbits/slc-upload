@@ -12,14 +12,14 @@ import com.google.common.base.Function;
 public class ClosureColumnLabelProvider<T> extends ColumnLabelProvider {
 	private final Function<T, String> labelFunction;
 
-	private @Nullable final Function<T, Color> foregroundFunction;
+	private @Nullable final Function<T, RGB> foregroundFunction;
 
 	public ClosureColumnLabelProvider(Function<T, String> labelFunction) {
 		this.labelFunction = labelFunction;
 		this.foregroundFunction = null;
 	}
 
-	public ClosureColumnLabelProvider(Function<T, String> labelFunction, Function<T, Color> foregroundFunction) {
+	public ClosureColumnLabelProvider(Function<T, String> labelFunction, Function<T, RGB> foregroundFunction) {
 		this.labelFunction = labelFunction;
 		this.foregroundFunction = foregroundFunction;
 	}
@@ -34,7 +34,7 @@ public class ClosureColumnLabelProvider<T> extends ColumnLabelProvider {
 	@Override
 	public @NonNull Color getForeground(@Nullable Object element) {
 		if (foregroundFunction != null) {
-			return foregroundFunction.apply((T) element);
+			return SWTResourceManager.getColor(foregroundFunction.apply((T) element));
 		} else {
 			@Nullable
 			Color defaultForeground = super.getForeground(element);

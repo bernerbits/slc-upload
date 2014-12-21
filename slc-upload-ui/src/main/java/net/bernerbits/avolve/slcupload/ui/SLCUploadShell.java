@@ -3,6 +3,7 @@ package net.bernerbits.avolve.slcupload.ui;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -15,6 +16,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 import net.bernerbits.avolve.slcupload.ErrorFileTransfer;
 import net.bernerbits.avolve.slcupload.FileTransfer;
@@ -38,8 +40,15 @@ import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.dialogs.ProgressMonitorDialog;
 import org.eclipse.jface.viewers.ArrayContentProvider;
 import org.eclipse.jface.viewers.ColumnLabelProvider;
+import org.eclipse.jface.viewers.IBaseLabelProvider;
+import org.eclipse.jface.viewers.ILabelProvider;
+import org.eclipse.jface.viewers.ILazyContentProvider;
+import org.eclipse.jface.viewers.ISelection;
+import org.eclipse.jface.viewers.LabelProvider;
+import org.eclipse.jface.viewers.StructuredSelection;
 import org.eclipse.jface.viewers.TableViewer;
 import org.eclipse.jface.viewers.TableViewerColumn;
+import org.eclipse.jface.viewers.Viewer;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.dnd.Clipboard;
 import org.eclipse.swt.events.KeyAdapter;
@@ -126,6 +135,9 @@ public class SLCUploadShell extends Shell {
 	private Group grpTransferDestination;
 
 	private Label topLogo;
+
+	private List<String> columnHeaders = new ArrayList<>(8);
+	private List<ColumnLabelProvider> columnProviders = new ArrayList<>(8);
 
 	public SLCUploadShell(Display display) {
 		super(display, SWT.SHELL_TRIM);
@@ -426,8 +438,45 @@ public class SLCUploadShell extends Shell {
 		fd_progressBar.left = new FormAttachment(lblTransferResults, 0, SWT.LEFT);
 		fileTransferProgress.setLayoutData(fd_progressBar);
 
-		Table table2 = new Table(fileTransferGroup, SWT.BORDER | SWT.FULL_SELECTION | SWT.MULTI);
-		transferResultsTable = new TableViewer(table2);
+		transferResultsTable = new TableViewer(fileTransferGroup, SWT.BORDER | SWT.FULL_SELECTION | SWT.MULTI | SWT.VIRTUAL);
+		transferResultsTable.setContentProvider(new ILazyContentProvider() {
+			private List<?> rows = null;
+			private int[] cellSizes;
+			
+			@Override
+			public void dispose() {
+			}
+
+			@Override
+			public void inputChanged(Viewer viewer, Object oldInput, Object newInput) {
+				if (newInput != null)
+				{
+					rows = (List<?>) newInput;
+					cellSizes = new int[transferResultsTable.getTable().getColumnCount()];
+							 
+					transferResultsTable.setItemCount(rows.size());
+				}
+			}
+
+			@Override
+			public void updateElement(int index) {
+				transferResultsTable.replace(rows.get(index), index);
+				
+				// Repack columns if necessary
+				TableItem item = transferResultsTable.getTable().getItem(index);
+				for(int i = 0; i < cellSizes.length; i++) {
+					String cellText = item.getText(i);
+					int cellSize = cellText == null ? 0 : cellText.length();
+					if (cellSize > cellSizes[i]) {
+						cellSizes[i] = cellSize;
+						transferResultsTable.getTable().getColumn(i).pack();
+					}
+				}
+			}
+		});
+		transferResultsTable.setUseHashlookup(true);
+		
+		Table table2 = transferResultsTable.getTable();
 		FormData fd_table_1 = new FormData();
 		fd_table_1.top = new FormAttachment(checkAutoScrollResults, 6);
 		fd_table_1.left = new FormAttachment(0, 6);
@@ -487,38 +536,17 @@ public class SLCUploadShell extends Shell {
 			}
 		});
 
-		TableViewerColumn statusColumn = new TableViewerColumn(transferResultsTable, SWT.NONE);
-		statusColumn.getColumn().setText("Status");
-		statusColumn.getColumn().setResizable(true);
-		statusColumn.getColumn().setMoveable(false);
-		statusColumn.getColumn().pack();
-		statusColumn.setLabelProvider(new ClosureColumnLabelProvider<FileTransferPresenter>(
+		defineColumn("Status", new ClosureColumnLabelProvider<FileTransferPresenter>(
 				FileTransferPresenter::status, FileTransferPresenter::foregroundHint));
-
-		TableViewerColumn duplicateColumn = new TableViewerColumn(transferResultsTable, SWT.NONE);
-		duplicateColumn.getColumn().setText("Dup");
-		duplicateColumn.getColumn().setResizable(true);
-		duplicateColumn.getColumn().setMoveable(false);
-		duplicateColumn.getColumn().pack();
-		duplicateColumn.setLabelProvider(new ClosureColumnLabelProvider<FileTransferPresenter>(
+		defineColumn("Dup", new ClosureColumnLabelProvider<FileTransferPresenter>(
 				FileTransferPresenter::duplicates));
-
-		TableViewerColumn localFileColumn = new TableViewerColumn(transferResultsTable, SWT.NONE);
-		localFileColumn.getColumn().setText("Local path");
-		localFileColumn.getColumn().setResizable(true);
-		localFileColumn.getColumn().setMoveable(false);
-		localFileColumn.getColumn().pack();
-		localFileColumn.setLabelProvider(new ClosureColumnLabelProvider<FileTransferPresenter>(
+		defineColumn("Local path", new ClosureColumnLabelProvider<FileTransferPresenter>(
 				FileTransferPresenter::localPath));
-
-		TableViewerColumn remotePathColumn = new TableViewerColumn(transferResultsTable, SWT.NONE);
-		remotePathColumn.getColumn().setText("Remote path");
-		remotePathColumn.getColumn().setResizable(true);
-		remotePathColumn.getColumn().setMoveable(false);
-		remotePathColumn.getColumn().pack();
-		remotePathColumn.setLabelProvider(new ClosureColumnLabelProvider<FileTransferPresenter>(
+		defineColumn("Remote path", new ClosureColumnLabelProvider<FileTransferPresenter>(
 				FileTransferPresenter::remotePath));
 
+		transferResultsTable.setInput(transferResults);
+		
 		addListener(SWT.Close, new Listener() {
 			@Override
 			public void handleEvent(@Nullable Event event) {
@@ -538,17 +566,34 @@ public class SLCUploadShell extends Shell {
 		createContents();
 	}
 
+	private void defineColumn(String header,
+			ColumnLabelProvider columnLabelProvider) {
+		TableViewerColumn column = new TableViewerColumn(transferResultsTable, SWT.NONE);
+		column.getColumn().setText(header);
+		column.getColumn().setResizable(true);
+		column.getColumn().setMoveable(false);
+		column.getColumn().pack();
+		column.setLabelProvider(columnLabelProvider);
+		
+		columnHeaders.add(header);
+		columnProviders.add(columnLabelProvider);
+	}
+
 	protected void selectAllResults() {
-		transferResultsTable.getTable().setSelection(transferResultsTable.getTable().getItems());
+		transferResultsTable.setSelection(new StructuredSelection((List<?>) transferResultsTable.getInput()));
 	}
 
 	protected void copySelectedResults() {
-		TableColumn[] columns = transferResultsTable.getTable().getColumns();
-		TableItem[] selection = transferResultsTable.getTable().getSelection();
-
-		busy("Copying selection to clipboard...", () -> {
-			return new ClipboardDataProvider(getDisplay()).toClipboardData(columns, selection);
-		}, (d) -> clipboard.setContents(d.getData(), d.getTransfers()));
+		ISelection selection = transferResultsTable.getSelection();
+		if (!selection.isEmpty())
+		{
+			@SuppressWarnings("unchecked")
+			List<FileTransferPresenter> selectedItems = ((StructuredSelection)selection).toList();
+			
+			busy("Copying selection to clipboard...", () -> {
+				return new ClipboardDataProvider().toClipboardData(columnHeaders, columnProviders, selectedItems);
+			}, (d) -> clipboard.setContents(d.getData(), d.getTransfers()));
+		}
 	}
 
 	private class DragListener implements MouseMoveListener, MouseListener, MouseTrackListener {
@@ -1093,8 +1138,8 @@ public class SLCUploadShell extends Shell {
 		String timeRemainingMsg;
 		if (progress > 0) {
 			double elapsedNanos = transferStopwatch.elapsed(TimeUnit.NANOSECONDS);
-			double totalEstNanos = elapsedNanos / progress;
-			double estNanosRemaining = totalEstNanos - elapsedNanos;
+			double estTotalNanos = elapsedNanos / progress;
+			double estNanosRemaining = estTotalNanos - elapsedNanos;
 
 			int secondsRemaining = (int) TimeUnit.SECONDS.convert((long) estNanosRemaining, TimeUnit.NANOSECONDS);
 
@@ -1111,11 +1156,11 @@ public class SLCUploadShell extends Shell {
 			daysRemaining %= 365;
 
 			if (yearsRemaining > 0) {
-				timeRemainingMsg = "Over " + yearsRemaining + " years" + (yearsRemaining > 1 ? "s" : "");
+				timeRemainingMsg = "Over " + yearsRemaining + " year" + (yearsRemaining > 1 ? "s" : "");
 			} else if (daysRemaining > 0) {
 				timeRemainingMsg = "Over " + daysRemaining + " day" + (daysRemaining > 1 ? "s" : "");
 			} else if (hoursRemaining > 0) {
-				timeRemainingMsg = String.format("About %d hour" + (hoursRemaining > 1 ? "s" : "") + " %d minute"
+				timeRemainingMsg = String.format("About %d hour" + (hoursRemaining > 1 ? "s" : "") + " and %d minute"
 						+ (minutesRemaining > 1 ? "s" : ""), hoursRemaining, minutesRemaining);
 			} else if (minutesRemaining > 0) {
 				timeRemainingMsg = String.format("About %d minute" + (minutesRemaining > 1 ? "s" : ""),
@@ -1132,8 +1177,6 @@ public class SLCUploadShell extends Shell {
 				+ " of " + slcUploadController.getTotalCount() + ")");
 	}
 
-	private long lastPackTime = 0;
-
 	private List<FileTransferPresenter> transferResults = new ArrayList<>();
 	private List<FileTransferPresenter> errorTransferResults = new ArrayList<>();
 
@@ -1144,20 +1187,10 @@ public class SLCUploadShell extends Shell {
 	private List<FileTransfer> conversionResults = new ArrayList<>();
 
 	private void toggleErrorResults(boolean errorResultsOnly) {
-		transferResultsTable.getTable().removeAll();
 		if (errorResultsOnly) {
-			transferResultsTable.add(errorTransferResults.toArray(new FileTransferPresenter[0]));
+			transferResultsTable.setInput(errorTransferResults);
 		} else {
-			transferResultsTable.add(transferResults.toArray(new FileTransferPresenter[0]));
-		}
-		packTransferResultColumns();
-	}
-
-	private void packTransferResultColumns() {
-		if (transferResultsTable.getTable().getItemCount() <= 5000) {
-			for (TableColumn column : transferResultsTable.getTable().getColumns()) {
-				column.pack();
-			}
+			transferResultsTable.setInput(transferResults);
 		}
 	}
 
@@ -1188,17 +1221,12 @@ public class SLCUploadShell extends Shell {
 				if (errorResult) {
 					errorTransferResults.add(presenter);
 				}
-				transferResultsTable.add(presenter);
+				transferResultsTable.setItemCount(
+						((Collection<?>)transferResultsTable.getInput()).size());
 
 				if (checkAutoScrollResults.getSelection()) {
 					TableItem[] items = transferResultsTable.getTable().getItems();
 					transferResultsTable.getTable().showItem(items[items.length - 1]);
-				}
-
-				long currentTime = System.currentTimeMillis();
-				if (currentTime - lastPackTime > 5000) {
-					packTransferResultColumns();
-					lastPackTime = currentTime;
 				}
 			}
 

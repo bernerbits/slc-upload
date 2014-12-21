@@ -5,6 +5,7 @@ import net.bernerbits.avolve.slcupload.FileTransfer;
 import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.graphics.Color;
+import org.eclipse.swt.graphics.RGB;
 import org.eclipse.wb.swt.SWTResourceManager;
 
 public class FileTransferPresenter {
@@ -31,14 +32,13 @@ public class FileTransferPresenter {
 		return fileTransfer.getDestination();
 	}
 
-	@SuppressWarnings("null")
-	public @NonNull Color foregroundHint() {
+	public @NonNull RGB foregroundHint() {
 		if (isError()) {
-			return SWTResourceManager.getColor(SWT.COLOR_RED);
+			return new RGB(255,0,0);
 		} else if (isSkipped()) {
-			return SWTResourceManager.getColor(SWT.COLOR_DARK_YELLOW);
+			return new RGB(128,128,0);
 		} else {
-			return SWTResourceManager.getColor(SWT.COLOR_DARK_GREEN);
+			return new RGB(0,128,0);
 		}
 	}
 
