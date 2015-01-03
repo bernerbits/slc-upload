@@ -1,28 +1,22 @@
 package net.bernerbits.avolve.slcupload;
 
-import java.lang.ref.SoftReference;
 import java.nio.file.Files;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentSkipListSet;
 
 import net.bernerbits.avolve.slcupload.exception.FileTransferException;
 import net.bernerbits.avolve.slcupload.exception.FileTransferMissingFileException;
 import net.bernerbits.avolve.slcupload.handler.ExistingFileHandler;
 import net.bernerbits.avolve.slcupload.model.FileTransferObject;
-import net.bernerbits.avolve.slcupload.util.function.NullSafe;
+
+import org.apache.log4j.Logger;
 
 import com.amazonaws.AmazonServiceException;
 import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.model.AmazonS3Exception;
-import com.amazonaws.services.s3.model.ObjectListing;
-import com.amazonaws.services.s3.model.S3ObjectSummary;
 
 public class S3FileTransfer extends RealFileTransfer {
+
+	private static Logger logger = Logger.getLogger(S3FileTransfer.class);
 
 	private static ThreadLocal<AWSCredentials> creds = new ThreadLocal<>();
 	private static ThreadLocal<AmazonS3Client> client = new ThreadLocal<>();
@@ -50,14 +44,19 @@ public class S3FileTransfer extends RealFileTransfer {
 
 	@Override
 	public void transfer() {
+		if (logger.isTraceEnabled()) {
+			logger.trace("EXECUTING TRANSFER: " + getPath() + " -> " + getDestination());
+		}
 		if (!Files.exists(getPath())) {
+			logger.warn("Error transferring file " + getPath() + " to " + getDestination() + ": " + getPath()
+					+ " does not exist.");
 			status = "File does not exist";
 			return;
 		}
 		try {
 			String remoteDest = prefix + (prefix.isEmpty() ? "" : "/") + getRemotePath();
 			boolean skip = false;
-			
+
 			if (remoteDestExists(remoteDest)) {
 				skip = existingFileHandler.getOptions(getPath()).isSkip();
 			}
@@ -69,8 +68,10 @@ public class S3FileTransfer extends RealFileTransfer {
 				status = "Skipped - File exists";
 			}
 		} catch (IllegalArgumentException e) {
+			logger.warn("Error transferring file " + getPath() + " to " + getDestination(), e);
 			status = "Input error: " + e.getMessage();
 		} catch (AmazonS3Exception e) {
+			logger.warn("Error transferring file " + getPath() + " to " + getDestination(), e);
 			status = "Upload error: " + e.getMessage();
 		}
 	}
@@ -79,8 +80,8 @@ public class S3FileTransfer extends RealFileTransfer {
 		try {
 			getClient(credentials).getObjectMetadata(bucket, remoteDest);
 			return true;
-		} catch(AmazonServiceException e) {
-			if(e.getStatusCode() == 404) {
+		} catch (AmazonServiceException e) {
+			if (e.getStatusCode() == 404) {
 				return false;
 			}
 			throw e;
@@ -98,10 +99,16 @@ public class S3FileTransfer extends RealFileTransfer {
 	public static FileTransfer create(String folderSource, AWSCredentials credentials, String bucket, String prefix,
 			FileTransferObject transferObject, ExistingFileHandler handler) {
 		try {
+			if (logger.isTraceEnabled()) {
+				logger.trace("New S3 file transfer: " + transferObject.getSourcePath() + " -> " + bucket + "/" + prefix
+						+ "/" + transferObject.getFileName());
+			}
 			return new S3FileTransfer(folderSource, credentials, bucket, prefix, transferObject, handler);
 		} catch (FileTransferMissingFileException e) {
+			logger.warn("Missing file " + transferObject.getSourcePath(), e);
 			return new ErrorFileTransfer(e.getMessage(), e.getPath());
 		} catch (FileTransferException e) {
+			logger.warn("Error transferring file " + transferObject.getSourcePath(), e);
 			return new ErrorFileTransfer(e.getMessage(), transferObject.getSourcePath());
 		}
 	}

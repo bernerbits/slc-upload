@@ -14,7 +14,7 @@ public class S3BucketChildFolder extends S3Folder {
 	private String name;
 	private List<RemoteFolder> children;
 	private AmazonS3Client client;
-	
+
 	public S3BucketChildFolder(S3Folder parent, String name, AmazonS3Client client) {
 		this.parent = parent;
 		this.name = name;
@@ -34,8 +34,7 @@ public class S3BucketChildFolder extends S3Folder {
 
 	@Override
 	public List<RemoteFolder> getChildren() {
-		if (children == null)
-		{
+		if (children == null) {
 			children = loadChildren();
 		}
 		return children;
@@ -50,13 +49,13 @@ public class S3BucketChildFolder extends S3Folder {
 	public AWSCredentials getCredentials() {
 		return parent.getCredentials();
 	}
-	
+
 	@Override
 	public String getPrefix() {
 		String prefix = parent.getPrefix();
 		return prefix + (prefix.isEmpty() ? "" : "/") + getName();
 	}
-	
+
 	private List<RemoteFolder> loadChildren() {
 		List<RemoteFolder> children = new ArrayList<>();
 
@@ -64,9 +63,9 @@ public class S3BucketChildFolder extends S3Folder {
 		ObjectListing listing = client.listObjects(req);
 		for (String prefix : getAllCommonPrefixes(listing)) {
 			prefix = prefix.substring(0, prefix.length() - 1);
-			addChild(children, prefix.substring(prefix.lastIndexOf("/")+1));
+			addChild(children, prefix.substring(prefix.lastIndexOf("/") + 1));
 		}
-		
+
 		return children;
 	}
 

@@ -1,5 +1,13 @@
 package net.bernerbits.avolve.slcupload.ui;
 
+import static net.bernerbits.avolve.slcupload.FileTransferer.TransferState.ABORTED;
+import static net.bernerbits.avolve.slcupload.FileTransferer.TransferState.ACTIVE;
+import static net.bernerbits.avolve.slcupload.FileTransferer.TransferState.FINISHED;
+import static net.bernerbits.avolve.slcupload.FileTransferer.TransferState.PAUSED;
+import static net.bernerbits.avolve.slcupload.FileTransferer.TransferState.PAUSING;
+import static net.bernerbits.avolve.slcupload.FileTransferer.TransferState.STOPPED;
+import static net.bernerbits.avolve.slcupload.FileTransferer.TransferState.STOPPING;
+
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -16,10 +24,10 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 import net.bernerbits.avolve.slcupload.ErrorFileTransfer;
 import net.bernerbits.avolve.slcupload.FileTransfer;
+import net.bernerbits.avolve.slcupload.FileTransferer.TransferState;
 import net.bernerbits.avolve.slcupload.dataexport.ColumnDefinition;
 import net.bernerbits.avolve.slcupload.dataimport.exception.FileExtensionNotRecognizedException;
 import net.bernerbits.avolve.slcupload.dataimport.exception.SpreadsheetFileNotFoundException;
@@ -29,7 +37,9 @@ import net.bernerbits.avolve.slcupload.ui.presenter.FileTransferPresenter;
 import net.bernerbits.avolve.slcupload.ui.util.ClipboardDataProvider;
 import net.bernerbits.avolve.slcupload.ui.util.ClosureColumnLabelProvider;
 import net.bernerbits.avolve.slcupload.util.ThrowingRunnable;
+import net.bernerbits.util.ErrorReporting;
 
+import org.apache.log4j.Logger;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
@@ -40,11 +50,8 @@ import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.dialogs.ProgressMonitorDialog;
 import org.eclipse.jface.viewers.ArrayContentProvider;
 import org.eclipse.jface.viewers.ColumnLabelProvider;
-import org.eclipse.jface.viewers.IBaseLabelProvider;
-import org.eclipse.jface.viewers.ILabelProvider;
 import org.eclipse.jface.viewers.ILazyContentProvider;
 import org.eclipse.jface.viewers.ISelection;
-import org.eclipse.jface.viewers.LabelProvider;
 import org.eclipse.jface.viewers.StructuredSelection;
 import org.eclipse.jface.viewers.TableViewer;
 import org.eclipse.jface.viewers.TableViewerColumn;
@@ -86,9 +93,11 @@ import org.eclipse.wb.swt.SWTResourceManager;
 import com.google.common.base.Stopwatch;
 
 public class SLCUploadShell extends Shell {
-	private static final String APP_DISPLAY_NAME = "PlansAnywhere File Transport Manager";
+	static final String APP_DISPLAY_NAME = "PlansAnywhere File Transport Manager";
 
 	private static final boolean S3_ENABLED = true;
+
+	private static Logger logger = Logger.getLogger(SLCUploadShell.class);
 
 	private final SLCUploadController slcUploadController;
 
@@ -119,10 +128,6 @@ public class SLCUploadShell extends Shell {
 	private Stopwatch transferStopwatch;
 
 	private StatusLineManager status;
-
-	private boolean transferInProgress = false;
-
-	private volatile boolean transferIsPaused = false;
 
 	private boolean closing = false;
 
@@ -191,6 +196,7 @@ public class SLCUploadShell extends Shell {
 		inputFileSearchButton.addSelectionListener(new SelectionAdapter() {
 			@Override
 			public void widgetSelected(@Nullable SelectionEvent e) {
+				logger.debug("Input file search button clicked");
 				slcUploadController.spreadsheetFileSearchRequested(SLCUploadShell.this::inputFileSelected);
 			}
 		});
@@ -235,6 +241,7 @@ public class SLCUploadShell extends Shell {
 		btnSrcFolder.addSelectionListener(new SelectionAdapter() {
 			@Override
 			public void widgetSelected(@Nullable SelectionEvent e) {
+				logger.debug("Source folder search button clicked");
 				slcUploadController.sourceFolderSearchRequested(SLCUploadShell.this::inputFolderSelected);
 			}
 		});
@@ -276,6 +283,7 @@ public class SLCUploadShell extends Shell {
 		btnFolder.addSelectionListener(new SelectionAdapter() {
 			@Override
 			public void widgetSelected(@Nullable SelectionEvent e) {
+				logger.debug("Destination folder search button clicked");
 				slcUploadController.destinationFolderSearchRequested(SLCUploadShell.this::outputFolderSelected);
 			}
 		});
@@ -287,6 +295,7 @@ public class SLCUploadShell extends Shell {
 		btnSBucket.addSelectionListener(new SelectionAdapter() {
 			@Override
 			public void widgetSelected(@Nullable SelectionEvent e) {
+				logger.debug("Destination S3 bucket search button clicked");
 				slcUploadController.s3BucketSearchRequested(SLCUploadShell.this::outputBucketSelected);
 			}
 		});
@@ -358,7 +367,14 @@ public class SLCUploadShell extends Shell {
 
 		checkAutoScrollResults = new Button(fileTransferGroup, SWT.CHECK);
 		checkAutoScrollResults.setText("Auto-scroll results");
-		checkAutoScrollResults.setSelection(true);
+		checkAutoScrollResults.setSelection(false);
+		checkAutoScrollResults.addSelectionListener(new SelectionAdapter() {
+			@Override
+			public void widgetSelected(@Nullable SelectionEvent e) {
+				logger.debug("Auto-scroll results checkbox clicked "
+						+ (checkAutoScrollResults.getSelection() ? " on" : " off"));
+			}
+		});
 		FormData fd_checkAutoScrollResults = new FormData();
 		fd_checkAutoScrollResults.top = new FormAttachment(0, 6);
 		fd_checkAutoScrollResults.right = new FormAttachment(100, -6);
@@ -367,10 +383,12 @@ public class SLCUploadShell extends Shell {
 
 		checkErrorResultsOnly = new Button(fileTransferGroup, SWT.CHECK);
 		checkErrorResultsOnly.setText("Show only error results");
-		checkErrorResultsOnly.setSelection(false);
+		checkErrorResultsOnly.setSelection(true);
 		checkErrorResultsOnly.addSelectionListener(new SelectionAdapter() {
 			@Override
 			public void widgetSelected(@Nullable SelectionEvent e) {
+				logger.debug("Show only error results checkbox clicked "
+						+ (checkErrorResultsOnly.getSelection() ? " on" : " off"));
 				toggleErrorResults(checkErrorResultsOnly.getSelection());
 			}
 		});
@@ -395,12 +413,14 @@ public class SLCUploadShell extends Shell {
 
 			@Override
 			public void widgetSelected(@Nullable SelectionEvent e) {
-				if (transferInProgress) {
+				logger.debug("Start button clicked");
+				if (transferInProgress()) {
 					resumeTransfer();
 				} else {
 					startTransfer();
 				}
 			}
+
 		});
 		btnStartTransfer.setText("Start");
 
@@ -410,6 +430,7 @@ public class SLCUploadShell extends Shell {
 		btnPauseTransfer.addSelectionListener(new SelectionAdapter() {
 			@Override
 			public void widgetSelected(@Nullable SelectionEvent e) {
+				logger.debug("Pause button clicked");
 				pauseTransfer();
 			}
 		});
@@ -420,6 +441,7 @@ public class SLCUploadShell extends Shell {
 		btnStopTransfer.addSelectionListener(new SelectionAdapter() {
 			@Override
 			public void widgetSelected(@Nullable SelectionEvent e) {
+				logger.debug("Stop button clicked");
 				stopTransfer();
 			}
 		});
@@ -438,22 +460,22 @@ public class SLCUploadShell extends Shell {
 		fd_progressBar.left = new FormAttachment(lblTransferResults, 0, SWT.LEFT);
 		fileTransferProgress.setLayoutData(fd_progressBar);
 
-		transferResultsTable = new TableViewer(fileTransferGroup, SWT.BORDER | SWT.FULL_SELECTION | SWT.MULTI | SWT.VIRTUAL);
+		transferResultsTable = new TableViewer(fileTransferGroup, SWT.BORDER | SWT.FULL_SELECTION | SWT.MULTI
+				| SWT.VIRTUAL);
 		transferResultsTable.setContentProvider(new ILazyContentProvider() {
 			private List<?> rows = null;
 			private int[] cellSizes;
-			
+
 			@Override
 			public void dispose() {
 			}
 
 			@Override
 			public void inputChanged(Viewer viewer, Object oldInput, Object newInput) {
-				if (newInput != null)
-				{
+				if (newInput != null) {
 					rows = (List<?>) newInput;
 					cellSizes = new int[transferResultsTable.getTable().getColumnCount()];
-							 
+
 					transferResultsTable.setItemCount(rows.size());
 				}
 			}
@@ -461,10 +483,10 @@ public class SLCUploadShell extends Shell {
 			@Override
 			public void updateElement(int index) {
 				transferResultsTable.replace(rows.get(index), index);
-				
+
 				// Repack columns if necessary
 				TableItem item = transferResultsTable.getTable().getItem(index);
-				for(int i = 0; i < cellSizes.length; i++) {
+				for (int i = 0; i < cellSizes.length; i++) {
 					String cellText = item.getText(i);
 					int cellSize = cellText == null ? 0 : cellText.length();
 					if (cellSize > cellSizes[i]) {
@@ -475,7 +497,7 @@ public class SLCUploadShell extends Shell {
 			}
 		});
 		transferResultsTable.setUseHashlookup(true);
-		
+
 		Table table2 = transferResultsTable.getTable();
 		FormData fd_table_1 = new FormData();
 		fd_table_1.top = new FormAttachment(checkAutoScrollResults, 6);
@@ -495,6 +517,7 @@ public class SLCUploadShell extends Shell {
 		exportItem.addSelectionListener(new SelectionAdapter() {
 			@Override
 			public void widgetSelected(@Nullable SelectionEvent e) {
+				logger.debug("User requested save of results to CSV");
 				slcUploadController.saveToCSV(SLCUploadShell.this::saveResultsToCsv);
 			}
 		});
@@ -507,6 +530,7 @@ public class SLCUploadShell extends Shell {
 		selAllItem.addSelectionListener(new SelectionAdapter() {
 			@Override
 			public void widgetSelected(@Nullable SelectionEvent e) {
+				logger.debug("User requested selection of all results with context menu");
 				selectAllResults();
 			}
 		});
@@ -517,6 +541,7 @@ public class SLCUploadShell extends Shell {
 		copyItem.addSelectionListener(new SelectionAdapter() {
 			@Override
 			public void widgetSelected(@Nullable SelectionEvent e) {
+				logger.debug("User requested copy of selected results with context menu");
 				copySelectedResults();
 			}
 		});
@@ -527,8 +552,10 @@ public class SLCUploadShell extends Shell {
 				if (e != null && transferIsNotRunning()) {
 					if ((e.stateMask & (SWT.CTRL | SWT.COMMAND)) != 0) {
 						if (e.keyCode == 'a' || e.keyCode == 'A') {
+							logger.debug("User requested selection of all results with Ctrl-A");
 							selectAllResults();
 						} else if (e.keyCode == 'c' || e.keyCode == 'C') {
+							logger.debug("User requested copy of selected results with Ctrl-C");
 							copySelectedResults();
 						}
 					}
@@ -536,25 +563,27 @@ public class SLCUploadShell extends Shell {
 			}
 		});
 
-		defineColumn("Status", new ClosureColumnLabelProvider<FileTransferPresenter>(
-				FileTransferPresenter::status, FileTransferPresenter::foregroundHint));
-		defineColumn("Dup", new ClosureColumnLabelProvider<FileTransferPresenter>(
-				FileTransferPresenter::duplicates));
+		defineColumn("Status", new ClosureColumnLabelProvider<FileTransferPresenter>(FileTransferPresenter::status,
+				FileTransferPresenter::foregroundHint));
+		defineColumn("Dup", new ClosureColumnLabelProvider<FileTransferPresenter>(FileTransferPresenter::duplicates));
 		defineColumn("Local path", new ClosureColumnLabelProvider<FileTransferPresenter>(
 				FileTransferPresenter::localPath));
 		defineColumn("Remote path", new ClosureColumnLabelProvider<FileTransferPresenter>(
 				FileTransferPresenter::remotePath));
 
 		transferResultsTable.setInput(transferResults);
-		
+
 		addListener(SWT.Close, new Listener() {
 			@Override
 			public void handleEvent(@Nullable Event event) {
 				if (event != null) {
-					if (transferInProgress) {
+					logger.debug("User tried to close the application window");
+					if (transferInProgress()) {
+						logger.debug("Transfer is in progress - prompting");
 						event.doit = false;
 						closeWithConfirmation();
 					} else {
+						logger.debug("No transfer in progress - closing");
 						SWTResourceManager.dispose();
 					}
 				}
@@ -566,33 +595,35 @@ public class SLCUploadShell extends Shell {
 		createContents();
 	}
 
-	private void defineColumn(String header,
-			ColumnLabelProvider columnLabelProvider) {
+	private void defineColumn(String header, ColumnLabelProvider columnLabelProvider) {
 		TableViewerColumn column = new TableViewerColumn(transferResultsTable, SWT.NONE);
 		column.getColumn().setText(header);
 		column.getColumn().setResizable(true);
 		column.getColumn().setMoveable(false);
 		column.getColumn().pack();
 		column.setLabelProvider(columnLabelProvider);
-		
+
 		columnHeaders.add(header);
 		columnProviders.add(columnLabelProvider);
 	}
 
 	protected void selectAllResults() {
+		logger.debug("Selecting all results");
 		transferResultsTable.setSelection(new StructuredSelection((List<?>) transferResultsTable.getInput()));
 	}
 
 	protected void copySelectedResults() {
+		logger.debug("Copying selected results to clipboard");
 		ISelection selection = transferResultsTable.getSelection();
-		if (!selection.isEmpty())
-		{
+		if (!selection.isEmpty()) {
 			@SuppressWarnings("unchecked")
-			List<FileTransferPresenter> selectedItems = ((StructuredSelection)selection).toList();
-			
+			List<FileTransferPresenter> selectedItems = ((StructuredSelection) selection).toList();
+
 			busy("Copying selection to clipboard...", () -> {
 				return new ClipboardDataProvider().toClipboardData(columnHeaders, columnProviders, selectedItems);
 			}, (d) -> clipboard.setContents(d.getData(), d.getTransfers()));
+		} else {
+			logger.debug("Selection is empty - nothing to copy");
 		}
 	}
 
@@ -619,6 +650,7 @@ public class SLCUploadShell extends Shell {
 		public void mouseDown(@Nullable MouseEvent e) {
 			if (transferIsNotRunning() && e != null && e.button == 1
 					&& ((e.stateMask & (SWT.CONTROL | SWT.SHIFT | SWT.COMMAND)) == 0)) {
+				logger.debug("Drag started @ " + e.x + "," + e.y);
 
 				Point pt = new Point(e.x, e.y);
 				TableItem item = table.getItem(pt);
@@ -635,17 +667,21 @@ public class SLCUploadShell extends Shell {
 
 		@Override
 		public void mouseUp(@Nullable MouseEvent e) {
-			selectionStarted = false;
-			table.setCapture(false);
-			if (scrollTimer != null) {
-				scrollTimer.cancel();
-				scrollTimer = null;
+			if (e != null && selectionStarted) {
+				logger.debug("Drag ended @ " + e.x + "," + e.y);
+				selectionStarted = false;
+				table.setCapture(false);
+				if (scrollTimer != null) {
+					scrollTimer.cancel();
+					scrollTimer = null;
+				}
 			}
 		}
 
 		@Override
 		public void mouseMove(@Nullable MouseEvent e) {
 			if (e != null && selectionStarted) {
+				logger.debug("Mouse dragged @ " + e.x + "," + e.y);
 				Point pt = new Point(e.x, e.y);
 
 				TableItem item = table.getItem(pt);
@@ -663,6 +699,7 @@ public class SLCUploadShell extends Shell {
 					firstIndex = tmp;
 				}
 
+				logger.debug("Selected range: " + firstIndex + " - " + lastIndex);
 				table.setSelection(Arrays.copyOfRange(table.getItems(), firstIndex, lastIndex + 1));
 			}
 		}
@@ -670,6 +707,7 @@ public class SLCUploadShell extends Shell {
 		@Override
 		public void mouseEnter(@Nullable MouseEvent e) {
 			if (selectionStarted) {
+				logger.debug("Dragged inside @ " + e.x + "," + e.y);
 				table.setCapture(false);
 				if (scrollTimer != null) {
 					scrollTimer.cancel();
@@ -681,6 +719,7 @@ public class SLCUploadShell extends Shell {
 		@Override
 		public void mouseExit(@Nullable MouseEvent e) {
 			if (selectionStarted) {
+				logger.debug("Dragged outside @ " + e.x + "," + e.y);
 				table.setCapture(true);
 
 				scrollTimer = new Timer();
@@ -716,6 +755,8 @@ public class SLCUploadShell extends Shell {
 									int minIndex = Math.min(firstIndex, lastIndex);
 									int maxIndex = Math.max(firstIndex, lastIndex);
 
+									logger.debug("Selected range: " + minIndex + " - " + maxIndex);
+
 									table.setSelection(Arrays.copyOfRange(table.getItems(), minIndex, maxIndex + 1));
 									table.showItem(newItem);
 								}
@@ -740,19 +781,21 @@ public class SLCUploadShell extends Shell {
 	}
 
 	private void closeWithConfirmation() {
+		logger.debug("Prompting user to stop the transfer and close, or cancel the close operation");
 		boolean confirm = MessageDialog
 				.openQuestion(this, "Transfer in Progress",
 						"A transfer is in progress. This will finish any current file transfers and end your session. Continue?");
 		if (confirm) {
+			logger.debug("User wants to close the window - deferring close and stopping the transfer");
 			closing = true;
 			stopTransfer();
+		} else {
+			logger.debug("User cancelled close operation");
 		}
 	}
 
 	protected void startTransfer() {
-		transferInProgress = true;
-		setTransferActive(true);
-
+		logger.info("Starting file transfer");
 		duplicateCount = 0;
 		skippedCount = 0;
 		transferResultsTable.getTable().removeAll();
@@ -765,27 +808,30 @@ public class SLCUploadShell extends Shell {
 			fileTransferUpdate(transfer);
 		}
 		transferStopwatch = Stopwatch.createStarted();
-		
+
 		hideInputFields();
-		
+
 		status.setMessage("Starting transfer ...");
-		slcUploadController.beginTransfer(SLCUploadShell.this::updateProgress, SLCUploadShell.this::fileTransferUpdate, SLCUploadShell.this::syncUserInput);
+		slcUploadController.beginTransfer(SLCUploadShell.this::updateProgress, SLCUploadShell.this::fileTransferUpdate,
+				SLCUploadShell.this::syncUserInput, SLCUploadShell.this::updateUIFromTransferState);
 	}
 
 	private void hideInputFields() {
+		logger.debug("Hiding the input fileds and maximizing the results table");
 		grpInputSource.setVisible(false);
 		grpTransferSource.setVisible(false);
 		grpTransferDestination.setVisible(false);
 		lblValidationErrors.setVisible(false);
-		
-		FormData fd = (FormData)fileTransferGroup.getLayoutData();
+
+		FormData fd = (FormData) fileTransferGroup.getLayoutData();
 		fd.top = new FormAttachment(topLogo, 10);
-		
+
 		layout(true);
 	}
 
 	private void showInputFields() {
-		FormData fd = (FormData)fileTransferGroup.getLayoutData();
+		logger.debug("Showing the input fields");
+		FormData fd = (FormData) fileTransferGroup.getLayoutData();
 		fd.top = new FormAttachment(lblValidationErrors, 5);
 
 		grpInputSource.setVisible(true);
@@ -797,15 +843,14 @@ public class SLCUploadShell extends Shell {
 	}
 
 	protected void resumeTransfer() {
-		setTransferActive(true);
-
+		logger.debug("Resuming transfer");
 		transferStopwatch.start();
 		status.setMessage("Starting transfer ...");
 		slcUploadController.resumeTransfer();
-		transferIsPaused = false;
 	}
 
 	protected void pauseTransfer() {
+		logger.debug("Pausing transfer");
 		btnPauseTransfer.setEnabled(false);
 		btnStopTransfer.setEnabled(false);
 		btnStartTransfer.setEnabled(false);
@@ -813,29 +858,19 @@ public class SLCUploadShell extends Shell {
 		busy("Waiting for current transfers to finish", () -> {
 			slcUploadController.pauseTransfer();
 			getDisplay().asyncExec(() -> {
-				transferIsPaused = true;
 				transferStopwatch.stop();
 				status.setMessage("Transfer is paused.");
-
-				setTransferActive(false);
 			});
 		});
 	}
 
 	protected void stopTransfer() {
+		logger.debug("Stopping transfer");
+
 		btnPauseTransfer.setEnabled(false);
 		btnStopTransfer.setEnabled(false);
 		btnStartTransfer.setEnabled(false);
-		busy("Waiting for current transfers to finish", () -> {
-			slcUploadController.stopTransfer();
-			getDisplay().asyncExec(() -> {
-				transferIsPaused = false;
-				status.setMessage("Transfer was stopped.");
-
-				transferHasEnded();
-				setTransferActive(false);
-			});
-		});
+		busy("Waiting for current transfers to finish", () -> slcUploadController.stopTransfer());
 	}
 
 	/**
@@ -853,6 +888,7 @@ public class SLCUploadShell extends Shell {
 	}
 
 	private void inputFileSelected(String inputFile) {
+		logger.debug("Input file selected: " + inputFile);
 		inputFileField.setText(inputFile);
 		clearSpreadsheetPreview();
 		busy("Loading \"" + inputFile + "\"...", () -> slcUploadController.openSpreadsheet(inputFile),
@@ -860,6 +896,7 @@ public class SLCUploadShell extends Shell {
 	}
 
 	private void busy(String waitMessage, ThrowingRunnable task) {
+		logger.trace("Opening Busy Dialog (discard result) - " + waitMessage);
 		busy(waitMessage, () -> {
 			task.run();
 			return null;
@@ -868,6 +905,7 @@ public class SLCUploadShell extends Shell {
 	}
 
 	private <T> void busy(String waitMessage, Callable<T> task, Consumer<T> handler) {
+		logger.trace("Opening Busy Dialog - " + waitMessage);
 		FutureTask<T> result = new FutureTask<T>(task);
 		startTask(waitMessage, result);
 		T value;
@@ -876,6 +914,7 @@ public class SLCUploadShell extends Shell {
 			getDisplay().asyncExec(() -> handler.accept(value));
 		} catch (ExecutionException e) {
 			if (e.getCause() instanceof OutOfMemoryError) {
+				System.gc();
 				getDisplay().asyncExec(
 						() -> ErrorDialog.openError(this, waitMessage, "Could not complete the operation requested.",
 								new Status(IStatus.ERROR, APP_DISPLAY_NAME, "Insufficient memory", e.getCause())));
@@ -901,13 +940,15 @@ public class SLCUploadShell extends Shell {
 						() -> ErrorDialog.openError(this, waitMessage, "Could not complete the operation requested.",
 								new Status(IStatus.ERROR, APP_DISPLAY_NAME, e.getMessage(), e.getCause())));
 			}
-			e.printStackTrace();
+			ErrorReporting.report(e, "busy", "exec", Thread.currentThread().getName());
 		} catch (InterruptedException e) {
-			e.printStackTrace();
+			ErrorReporting.report(e, "busy", "interrupted", Thread.currentThread().getName());
 		} catch (OutOfMemoryError e) {
+			System.gc();
 			getDisplay().asyncExec(
 					() -> ErrorDialog.openError(this, waitMessage, "Could not complete the operation requested.",
 							new Status(IStatus.ERROR, APP_DISPLAY_NAME, "Insufficient memory", e)));
+			ErrorReporting.report(e, "busy", "oome", Thread.currentThread().getName());
 		} finally {
 			endTask();
 		}
@@ -921,27 +962,36 @@ public class SLCUploadShell extends Shell {
 		dialog.setCancelable(false);
 		try {
 			dialog.run(true, false, (monitor) -> {
-				monitor.beginTask(waitMessage, IProgressMonitor.UNKNOWN);
-				task.run();
-				monitor.done();
+				try {
+					logger.debug("Starting busy task - " + waitMessage);
+					monitor.beginTask(waitMessage, IProgressMonitor.UNKNOWN);
+					task.run();
+					monitor.done();
+				} finally {
+					logger.debug("Busy task finished - " + waitMessage);
+				}
 			});
 		} catch (OutOfMemoryError e) {
 			getDisplay().asyncExec(
 					() -> ErrorDialog.openError(this, waitMessage, "Could not complete the operation requested.",
 							new Status(IStatus.ERROR, APP_DISPLAY_NAME, "Insufficient memory", e)));
 			System.gc();
+			ErrorReporting.report(e, "Busy Dialog", waitMessage, "Out of Memory");
 		} catch (InvocationTargetException | InterruptedException e) {
-			e.printStackTrace();
+			logger.warn("Busy Dialog did not complete normally - " + waitMessage);
+			logger.warn(e.getMessage(), e);
 		}
 	}
 
 	private void endTask() {
 		if (--currentTasks == 0) {
+			logger.debug("All busy tasks complete - reenabling window input");
 			setEnabled(true);
 		}
 	}
 
 	private void clearSpreadsheetPreview() {
+		logger.debug("Clearing preview table");
 		sheetPreviewTable.getTable().clearAll();
 		sheetPreviewTable.getTable().setItemCount(0);
 		for (TableColumn column : sheetPreviewTable.getTable().getColumns()) {
@@ -950,6 +1000,7 @@ public class SLCUploadShell extends Shell {
 	}
 
 	private void previewRows(Iterable<SpreadsheetRow> rows) {
+		logger.debug("Populating preview table");
 		sheetPreviewTable.setContentProvider(ArrayContentProvider.getInstance());
 		sheetPreviewTable.getTable().setEnabled(false);
 		Iterator<SpreadsheetRow> it = rows.iterator();
@@ -958,6 +1009,7 @@ public class SLCUploadShell extends Shell {
 			if (i == 0) {
 				int col = 0;
 				for (String cellValue : row.getValues()) {
+					logger.debug("Preview Column Header: " + cellValue);
 					final TableViewerColumn column = new TableViewerColumn(sheetPreviewTable, SWT.NONE);
 					if (cellValue != null) {
 						column.getColumn().setText(cellValue);
@@ -991,10 +1043,12 @@ public class SLCUploadShell extends Shell {
 	}
 
 	private void saveResultsToCsv(String csvFile) {
+		logger.debug("Saving " + (checkErrorResultsOnly.getSelection() ? "error" : "full") + " results to file "
+				+ csvFile);
 		List<FileTransferPresenter> results = checkErrorResultsOnly.getSelection() ? errorTransferResults
 				: transferResults;
 
-		busy("Writing \"" + csvFile + "\"...", () -> slcUploadController.writeCsv(csvFile, results,
+		busy("Writing \"" + csvFile + "\"...", () -> SLCUploadController.writeCsv(csvFile, results,
 				new ColumnDefinition<FileTransferPresenter>("Status", FileTransferPresenter::status),
 				new ColumnDefinition<FileTransferPresenter>("Dup", FileTransferPresenter::duplicates),
 				new ColumnDefinition<FileTransferPresenter>("Local Path", FileTransferPresenter::localPath),
@@ -1002,25 +1056,29 @@ public class SLCUploadShell extends Shell {
 	}
 
 	private void inputFolderSelected(String folderPath) {
+		logger.debug("Input folder selected: " + folderPath);
 		inputLocationField.setText("Folder: " + folderPath);
 		checkValidForTransfer();
 	}
 
 	private void outputFolderSelected(String folderPath) {
+		logger.debug("Output local folder selected: " + folderPath);
 		outputLocationField.setText("Folder: " + folderPath);
 		checkValidForTransfer();
 	}
 
 	private void outputBucketSelected(String folderPath) {
+		logger.debug("Output S3 bucket selected: " + folderPath);
 		outputLocationField.setText("S3: " + folderPath);
 		checkValidForTransfer();
 	}
 
 	private void checkValidForTransfer() {
+		logger.debug("Checking if transfer is valid");
 		boolean valid = slcUploadController.isValidForTransfer(this::setValidationMessage, this::handleConversionError,
 				this::conversionStarted);
-		if (valid)
-		{
+		logger.debug("Validation result: " + valid);
+		if (valid) {
 			lblValidationErrors.setText("");
 		}
 		recursiveSetEnabled(fileTransferGroup, valid);
@@ -1038,15 +1096,18 @@ public class SLCUploadShell extends Shell {
 	}
 
 	private void conversionStarted() {
+		logger.debug("Spreadsheet conversion started");
 		conversionResults.clear();
 	}
 
 	private void handleConversionError(String message, String detail) {
+		logger.debug("Received spreadsheet row conversion error: " + message + ", " + detail);
 		ErrorFileTransfer eft = new ErrorFileTransfer(message, detail);
 		conversionResults.add(eft);
 	}
 
 	private void setValidationMessage(String message) {
+		logger.debug("Received validation message: " + message);
 		lblValidationErrors.setText(message);
 	}
 
@@ -1054,11 +1115,7 @@ public class SLCUploadShell extends Shell {
 		fileTransferProgress.setEnabled(!complete);
 		fileTransferProgress.setSelection((int) Math.round(progress * fileTransferProgress.getMaximum()));
 
-		if (complete) {
-			setTransferActive(false);
-			transferHasEnded();
-			status.setMessage("Transfer complete! " + convertSecondsToElapsedTime(transferStopwatch.elapsed(TimeUnit.SECONDS)));
-		} else if (!transferIsPaused) {
+		if (!transferIsPaused()) {
 			updateStatusLine(progress);
 		}
 	}
@@ -1073,7 +1130,7 @@ public class SLCUploadShell extends Shell {
 		hours %= 24;
 		int years = days / 365;
 		days %= 365;
-		
+
 		StringBuilder sb = new StringBuilder();
 		if (years > 0) {
 			sb.append(years).append(" year").append(years > 1 ? "s " : " ");
@@ -1090,13 +1147,13 @@ public class SLCUploadShell extends Shell {
 		if (seconds > 0) {
 			sb.append(seconds).append(" second").append(seconds > 1 ? "s " : " ");
 		}
-		
+
 		return sb.toString();
 	}
 
 	private void transferHasEnded() {
+		logger.info("File transfer has ended.");
 		showInputFields();
-		transferInProgress = false;
 
 		// Stopwatch may have been stopped previously by a pause operation.
 		if (transferStopwatch.isRunning())
@@ -1115,23 +1172,48 @@ public class SLCUploadShell extends Shell {
 			resultText += ", " + diff + " Not Copied";
 		}
 
+		logger.debug("Results: " + resultText);
 		lblTransferResults.setText(resultText);
 
 		if (closing) {
+			logger.debug("Performing deferred close of the application window");
 			getDisplay().asyncExec(this::close);
 		}
 	}
 
-	private void setTransferActive(boolean isActive) {
-		btnStartTransfer.setEnabled(!isActive);
-		btnPauseTransfer.setEnabled(isActive);
-		btnStopTransfer.setEnabled(isActive || transferIsPaused);
+	private void updateUIFromTransferState(TransferState state) {
+		getDisplay().asyncExec(
+				() -> {
+					btnStartTransfer.setEnabled(state == STOPPED || state == FINISHED || state == ABORTED);
+					btnPauseTransfer.setEnabled(state == ACTIVE);
+					btnStopTransfer.setEnabled(state == ACTIVE || state == PAUSED);
 
-		if (isActive) {
-			transferResultsTable.getTable().setMenu(null);
-		} else {
-			transferResultsTable.getTable().setMenu(resultsMenu);
-		}
+					logger.debug("Buttons enabled: [start: " + btnStartTransfer.isEnabled() + " pause: "
+							+ btnPauseTransfer.isEnabled() + " stop: " + btnStopTransfer.isEnabled() + "]");
+
+					if (state == PAUSED || state == STOPPED || state == FINISHED || state == ABORTED) {
+						logger.debug("Enabling results context menu.");
+						transferResultsTable.getTable().setMenu(resultsMenu);
+						if (state != PAUSED) {
+							transferHasEnded();
+							if (state == FINISHED) {
+								String elapsedTimeMessage = convertSecondsToElapsedTime(transferStopwatch
+										.elapsed(TimeUnit.SECONDS));
+								logger.debug("Transfer finished. Elapsed time: " + elapsedTimeMessage);
+								status.setMessage("Transfer complete! " + elapsedTimeMessage);
+							} else if (state == STOPPED) {
+								logger.debug("Transfer stopped.");
+								status.setMessage("Transfer was stopped.");
+							} else if (state == ABORTED) {
+								logger.debug("Transfer aborted.");
+								status.setMessage("Transfer was aborted due to an error.");
+							}
+						}
+					} else {
+						logger.debug("Disabling results context menu.");
+						transferResultsTable.getTable().setMenu(null);
+					}
+				});
 	}
 
 	private void updateStatusLine(double progress) {
@@ -1195,6 +1277,7 @@ public class SLCUploadShell extends Shell {
 	}
 
 	private void syncUserInput(Runnable inputTask) {
+		logger.debug("Getting user input");
 		transferStopwatch.stop();
 		try {
 			getDisplay().syncExec(inputTask);
@@ -1207,22 +1290,32 @@ public class SLCUploadShell extends Shell {
 		if (transfer.isDuplicate()) {
 			FileTransferPresenter originalTransfer = transfersByPath.get(transfer.getPathAsString());
 			originalTransfer.addDuplicate();
+			if (logger.isTraceEnabled()) {
+				logger.trace("Duplicate transfer result: local=" + originalTransfer.localPath() + " remote="
+						+ originalTransfer.remotePath() + " duplicates=" + originalTransfer.duplicates() + " status="
+						+ originalTransfer.status());
+			}
 			transferResultsTable.refresh(originalTransfer);
 			duplicateCount++;
 		} else {
 			FileTransferPresenter presenter = new FileTransferPresenter(transfer);
+			if (logger.isTraceEnabled()) {
+				logger.trace("Transfer result: local=" + presenter.localPath() + " remote=" + presenter.remotePath()
+						+ " status=" + presenter.status());
+			}
 			transferResults.add(presenter);
 			boolean skipped = transfer.getStatus().startsWith("Skipped");
 			boolean errorResult = !(skipped || transfer.getStatus().equals("\u2713"));
 			if (skipped) {
 				skippedCount++;
+				logger.trace("Transfer was skipped. Total skipped = " + skippedCount);
 			}
 			if (errorResult || !checkErrorResultsOnly.getSelection()) {
 				if (errorResult) {
+					logger.trace("Adding error result");
 					errorTransferResults.add(presenter);
 				}
-				transferResultsTable.setItemCount(
-						((Collection<?>)transferResultsTable.getInput()).size());
+				transferResultsTable.setItemCount(((Collection<?>) transferResultsTable.getInput()).size());
 
 				if (checkAutoScrollResults.getSelection()) {
 					TableItem[] items = transferResultsTable.getTable().getItems();
@@ -1235,6 +1328,15 @@ public class SLCUploadShell extends Shell {
 	}
 
 	private boolean transferIsNotRunning() {
-		return !transferInProgress || transferIsPaused;
+		return !transferInProgress() || transferIsPaused();
 	}
+
+	private boolean transferInProgress() {
+		return slcUploadController.transferStateIsOneOf(ACTIVE, PAUSING, PAUSED, STOPPING);
+	}
+
+	private boolean transferIsPaused() {
+		return slcUploadController.transferStateIsOneOf(PAUSED);
+	}
+
 }

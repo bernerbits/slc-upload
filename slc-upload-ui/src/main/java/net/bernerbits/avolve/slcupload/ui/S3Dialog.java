@@ -8,11 +8,11 @@ import java.util.prefs.Preferences;
 import net.bernerbits.avolve.slcupload.model.RemoteFolder;
 import net.bernerbits.avolve.slcupload.ui.controller.SLCUploadController;
 import net.bernerbits.avolve.slcupload.ui.util.FileIcons;
+import net.bernerbits.avolve.slcupload.util.GlobalConfigs;
 
+import org.apache.log4j.Logger;
 import org.eclipse.jdt.annotation.Nullable;
 import org.eclipse.jface.viewers.IStructuredSelection;
-import org.eclipse.jface.viewers.ITreeViewerListener;
-import org.eclipse.jface.viewers.TreeExpansionEvent;
 import org.eclipse.jface.viewers.TreeViewer;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.CLabel;
@@ -20,10 +20,7 @@ import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.events.TreeEvent;
 import org.eclipse.swt.events.TreeListener;
-import org.eclipse.swt.graphics.Color;
-import org.eclipse.swt.graphics.Font;
 import org.eclipse.swt.graphics.Image;
-import org.eclipse.swt.graphics.RGB;
 import org.eclipse.swt.layout.FormAttachment;
 import org.eclipse.swt.layout.FormData;
 import org.eclipse.swt.layout.FormLayout;
@@ -42,6 +39,8 @@ import org.eclipse.wb.swt.SWTResourceManager;
 import com.google.common.base.Strings;
 
 public class S3Dialog extends Dialog {
+	private static Logger logger = Logger.getLogger(S3Dialog.class);
+
 	private static Image folderIcon;
 	private static Image bucketIcon;
 	static {
@@ -123,20 +122,46 @@ public class S3Dialog extends Dialog {
 		progress.setState(SWT.NORMAL);
 
 		awsKeyText = new Text(shell, SWT.BORDER);
-		awsKeyText.setText(Preferences.userNodeForPackage(SLCUploadUI.class).get("aws_key", ""));
-		awsKeyText.addModifyListener((e) -> Preferences.userNodeForPackage(SLCUploadUI.class).put("aws_key",
-				awsKeyText.getText() == null ? "" : awsKeyText.getText()));
-		awsKeyText.addModifyListener((e) -> checkS3Connection());
+		String keyFromPrefs = Preferences.userNodeForPackage(SLCUploadUI.class).get("aws_key", "");
+		awsKeyText.setText(keyFromPrefs);
+		if (logger.isDebugEnabled()) {
+			if (!keyFromPrefs.isEmpty()) {
+				logger.debug("AWS key from preferences: " + keyFromPrefs);
+			} else {
+				logger.debug("No AWS key in preferences");
+			}
+		}
+
+		awsKeyText.addModifyListener((e) -> {
+			logger.trace("AWS Key modified - " + awsKeyText.getText());
+			Preferences.userNodeForPackage(SLCUploadUI.class).put("aws_key",
+					awsKeyText.getText() == null ? "" : awsKeyText.getText());
+			checkS3Connection();
+		});
+
 		fd_lblAwsSecret.top = new FormAttachment(awsKeyText, 9);
 		FormData fd_awsKeyText = new FormData();
 		fd_awsKeyText.left = new FormAttachment(lblAwsKey, 6);
 		awsKeyText.setLayoutData(fd_awsKeyText);
 
 		awsSecretText = new Text(shell, SWT.BORDER | SWT.PASSWORD);
-		awsSecretText.setText(Preferences.userNodeForPackage(SLCUploadUI.class).get("aws_secret", ""));
-		awsSecretText.addModifyListener((e) -> Preferences.userNodeForPackage(SLCUploadUI.class).put("aws_secret",
-				awsSecretText.getText() == null ? "" : awsSecretText.getText()));
-		awsSecretText.addModifyListener((e) -> checkS3Connection());
+		String secretFromPrefs = Preferences.userNodeForPackage(SLCUploadUI.class).get("aws_secret", "");
+		awsSecretText.setText(secretFromPrefs);
+		if (logger.isDebugEnabled()) {
+			if (!secretFromPrefs.isEmpty()) {
+				logger.debug("AWS secret set from preferences");
+			} else {
+				logger.debug("No AWS secret in preferences");
+			}
+		}
+
+		awsSecretText.addModifyListener((e) -> {
+			logger.trace("AWS Secret modified");
+			Preferences.userNodeForPackage(SLCUploadUI.class).put("aws_secret",
+					awsSecretText.getText() == null ? "" : awsSecretText.getText());
+			checkS3Connection();
+		});
+
 		fd_awsKeyText.right = new FormAttachment(awsSecretText, 0, SWT.RIGHT);
 		fd_awsKeyText.bottom = new FormAttachment(awsSecretText, -6);
 		FormData fd_awsSecretText = new FormData();
@@ -149,6 +174,7 @@ public class S3Dialog extends Dialog {
 		cancelButton.addSelectionListener(new SelectionAdapter() {
 			@Override
 			public void widgetSelected(@Nullable SelectionEvent e) {
+				logger.debug("S3 selection cancelled");
 				finish(null);
 			}
 		});
@@ -167,6 +193,7 @@ public class S3Dialog extends Dialog {
 		okButton.addSelectionListener(new SelectionAdapter() {
 			@Override
 			public void widgetSelected(@Nullable SelectionEvent e) {
+				logger.debug("OK button clicked");
 				RemoteFolder selected = s3BucketTree.getSelection().isEmpty() ? null
 						: (RemoteFolder) ((IStructuredSelection) s3BucketTree.getSelection()).getFirstElement();
 				finish(selected);
@@ -188,8 +215,10 @@ public class S3Dialog extends Dialog {
 		fd_s3BucketTree.right = new FormAttachment(awsKeyText, 0, SWT.RIGHT);
 		fd_s3BucketTree.left = new FormAttachment(0, 10);
 		tree.setLayoutData(fd_s3BucketTree);
-		s3BucketTree.addDoubleClickListener((e) -> finish((RemoteFolder) ((IStructuredSelection) e.getSelection())
-				.getFirstElement()));
+		s3BucketTree.addDoubleClickListener((e) -> {
+			logger.debug("S3 folder double-clicked");
+			finish((RemoteFolder) ((IStructuredSelection) e.getSelection()).getFirstElement());
+		});
 		s3BucketTree.addSelectionChangedListener((e) -> okButton.setEnabled(!e.getSelection().isEmpty()));
 		s3BucketTree.getTree().addTreeListener(new TreeListener() {
 
@@ -227,56 +256,71 @@ public class S3Dialog extends Dialog {
 	private boolean checkNeeded = false;
 
 	private void checkS3Connection() {
+		logger.debug("S3 connection check");
 		if (!checkInProgress) {
+			logger.debug("No check in progress - performing check");
+
+			checkInProgress = true;
 			progress.setVisible(true);
 			s3StatusLabel.setText("Connecting to S3...");
 			s3StatusLabel.setVisible(true);
 			s3BucketTree.getTree().setVisible(false);
 			progress.setState(SWT.NORMAL);
 
-			checkInProgress = true;
 			String awsKey = awsKeyText.getText();
 			String awsSecret = awsSecretText.getText();
 
 			if (Strings.isNullOrEmpty(awsKey) || Strings.isNullOrEmpty(awsSecret)) {
+				logger.debug("S3 credentials incomplete - aborting check");
 				s3StatusLabel.setText("Please enter your S3 credentials.");
 				checkInProgress = false;
 				progress.setVisible(false);
 			} else {
-				new Thread(() -> uploadController.listBuckets(awsKey, awsSecret, this::connectionCheckFinished,
-						this::populateBucketTree)).start();
+				GlobalConfigs.threadFactory.newThread(
+						() -> uploadController.listBuckets(awsKey, awsSecret, this::connectionCheckFinished,
+								this::populateBucketTree)).start();
 			}
 		} else {
+			logger.debug("Check in progress - setting flag to check when finished");
 			checkNeeded = true;
 		}
 	}
 
 	private void connectionCheckFinished(boolean success) {
 		shell.getDisplay().syncExec(() -> {
+			logger.debug("S3 connection check finished");
 			checkInProgress = false;
 			if (success) {
+				logger.debug("S3 connection check succeeded");
 				progress.setVisible(false);
 				s3StatusLabel.setVisible(false);
 				s3BucketTree.getTree().setVisible(true);
 			} else {
+				logger.debug("S3 connection check failed");
 				progress.setState(SWT.PAUSED);
 				s3StatusLabel.setText("Unable to connect to S3. Please check your S3 credentials.");
 			}
 			if (checkNeeded) {
+				logger.debug("Connection check flag was set while previous check was in progress.");
 				checkNeeded = false;
 				if (!success) {
+					logger.debug("Previous check failed, so checking again.");
 					checkS3Connection();
+				} else {
+					logger.debug("Previous check succeeded, so ignoring the flag.");
 				}
 			}
 		});
 	}
 
 	private void populateBucketTree(List<RemoteFolder> buckets) {
+		logger.debug("Populating the S3 bucket tree.");
 		shell.getDisplay().syncExec(() -> {
 			for (TreeItem item : s3BucketTree.getTree().getItems()) {
 				item.dispose();
 			}
 			for (RemoteFolder bucket : buckets) {
+				logger.trace("Adding bucket " + bucket.getPath());
 				TreeItem item = new TreeItem(s3BucketTree.getTree(), SWT.NONE);
 				item.setText(bucket.getName());
 				item.setData(bucket);
@@ -289,11 +333,12 @@ public class S3Dialog extends Dialog {
 
 	private void populateTreeItem(TreeItem parent, List<RemoteFolder> buckets) {
 		for (RemoteFolder bucket : buckets) {
+			logger.trace("Adding bucket prefix " + bucket.getPath());
 			TreeItem item = new TreeItem(parent, SWT.NONE);
 			item.setText(bucket.getName());
 			item.setData(bucket);
 			item.setImage(folderIcon);
-			
+
 			populateTreeItemOnExpand(item, bucket);
 		}
 	}
@@ -302,22 +347,26 @@ public class S3Dialog extends Dialog {
 		TreeItem placeHolder = new TreeItem(parent, SWT.NONE);
 		placeHolder.setText("Loading...");
 		placeHolder.setData(new Object());
-		placeHolder.setForeground(SWTResourceManager.getColor(0x80,0x80,0x80));
+		placeHolder.setForeground(SWTResourceManager.getColor(0x80, 0x80, 0x80));
 		placeHolder.setFont(SWTResourceManager.getItalicFont(placeHolder.getFont()));
 		placeHolder.setGrayed(true);
-		
+
 		AtomicBoolean initialized = new AtomicBoolean(false);
 		parent.addListener(SWT.Expand, (e) -> {
 			if (!initialized.getAndSet(true)) {
+				logger.debug("S3 folder " + bucket.getPath() + " expanded for the first time.");
 				shell.getDisplay().asyncExec(() -> {
-					populateTreeItem(parent, bucket.getChildren()); 
+					populateTreeItem(parent, bucket.getChildren());
 					placeHolder.dispose();
 				});
+			} else {
+				logger.trace("S3 folder " + bucket.getPath() + " expanded, but already initialized.");
 			}
 		});
 	}
-	
+
 	private void finish(@Nullable RemoteFolder result) {
+		logger.debug("S3 folder selected: " + result);
 		this.result = result;
 		shell.dispose();
 	}

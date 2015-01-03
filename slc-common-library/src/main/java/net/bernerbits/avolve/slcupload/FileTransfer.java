@@ -13,8 +13,7 @@ public abstract class FileTransfer {
 		return false;
 	}
 
-	public final String getStatus()
-	{
+	public final String getStatus() {
 		return status;
 	}
 

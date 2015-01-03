@@ -3,10 +3,7 @@ package net.bernerbits.avolve.slcupload.ui.presenter;
 import net.bernerbits.avolve.slcupload.FileTransfer;
 
 import org.eclipse.jdt.annotation.NonNull;
-import org.eclipse.swt.SWT;
-import org.eclipse.swt.graphics.Color;
 import org.eclipse.swt.graphics.RGB;
-import org.eclipse.wb.swt.SWTResourceManager;
 
 public class FileTransferPresenter {
 	private final FileTransfer fileTransfer;
@@ -34,11 +31,11 @@ public class FileTransferPresenter {
 
 	public @NonNull RGB foregroundHint() {
 		if (isError()) {
-			return new RGB(255,0,0);
+			return new RGB(255, 0, 0);
 		} else if (isSkipped()) {
-			return new RGB(128,128,0);
+			return new RGB(128, 128, 0);
 		} else {
-			return new RGB(0,128,0);
+			return new RGB(0, 128, 0);
 		}
 	}
 

@@ -10,7 +10,7 @@ public abstract class FileTransferOperation {
 	private final String folderSource;
 	private final List<FileTransferObject> transferObjects;
 	private final AtomicInteger counter = new AtomicInteger(0);
-	
+
 	public FileTransferOperation(String folderSource, List<FileTransferObject> transferObjects) {
 		this.folderSource = folderSource;
 		this.transferObjects = transferObjects;

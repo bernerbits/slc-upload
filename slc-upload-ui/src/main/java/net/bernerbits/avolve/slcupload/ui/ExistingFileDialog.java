@@ -19,7 +19,7 @@ import org.eclipse.swt.widgets.Shell;
 import org.eclipse.wb.swt.SWTResourceManager;
 
 public class ExistingFileDialog extends Dialog {
-	
+
 	protected ExistingFileOptions result;
 	protected Shell shell;
 
@@ -30,9 +30,10 @@ public class ExistingFileDialog extends Dialog {
 	private Button radWrite;
 	private Button cbRemember;
 	private Button btnOK;
-	
+
 	/**
 	 * Create the dialog.
+	 * 
 	 * @param parent
 	 * @param style
 	 */
@@ -43,11 +44,12 @@ public class ExistingFileDialog extends Dialog {
 
 	/**
 	 * Open the dialog.
+	 * 
 	 * @return the result
 	 */
 	public ExistingFileOptions open(Path existingFile) {
 		createContents();
-		
+
 		try {
 			lblFileIcon.setImage(FileIcons.getFileImage(existingFile.toFile()));
 		} catch (IOException e) {
@@ -66,6 +68,14 @@ public class ExistingFileDialog extends Dialog {
 		return result;
 	}
 
+	public void closeInUIThread() {
+		shell.getDisplay().asyncExec(() -> {
+			if (!shell.isDisposed()) {
+				shell.dispose();
+			}
+		});
+	}
+
 	/**
 	 * Create contents of the dialog.
 	 */
@@ -75,7 +85,7 @@ public class ExistingFileDialog extends Dialog {
 		shell.setSize(350, 300);
 		shell.setText("File Already Exists");
 		shell.setLayout(new FormLayout());
-		
+
 		lblFileIcon = new Label(shell, SWT.NONE);
 		FormData fd_lblNewLabel = new FormData();
 		fd_lblNewLabel.top = new FormAttachment(0, 10);
@@ -108,7 +118,7 @@ public class ExistingFileDialog extends Dialog {
 		fd_lblStaticText2.left = new FormAttachment(lblFileIcon, 10);
 		lblStaticText2.setLayoutData(fd_lblStaticText2);
 		lblStaticText2.setText("already exists in the destination.");
-		
+
 		Label lblStaticText3 = new Label(shell, SWT.NONE);
 		FormData fd_lblStaticText3 = new FormData();
 		fd_lblStaticText3.top = new FormAttachment(lblStaticText2, 20);
@@ -124,7 +134,7 @@ public class ExistingFileDialog extends Dialog {
 		fd_radSkip.left = new FormAttachment(0, 10);
 		radSkip.setLayoutData(fd_radSkip);
 		radSkip.setText("&Skip this file");
-		
+
 		radWrite = new Button(shell, SWT.RADIO);
 		FormData fd_radWrite = new FormData();
 		fd_radWrite.top = new FormAttachment(radSkip, 2);
@@ -143,15 +153,15 @@ public class ExistingFileDialog extends Dialog {
 
 		btnOK = new Button(shell, SWT.PUSH);
 		FormData fd_btnOK = new FormData();
-		fd_btnOK.right = new FormAttachment(100,-10);
-		fd_btnOK.bottom = new FormAttachment(100,-10);
+		fd_btnOK.right = new FormAttachment(100, -10);
+		fd_btnOK.bottom = new FormAttachment(100, -10);
 		btnOK.setLayoutData(fd_btnOK);
 		btnOK.setText("&Ok");
 		btnOK.setEnabled(false);
 
 		radSkip.addListener(SWT.Selection, (e) -> btnOK.setEnabled(true));
 		radWrite.addListener(SWT.Selection, (e) -> btnOK.setEnabled(true));
-		
+
 		btnOK.addListener(SWT.Selection, (e) -> {
 			result = new ExistingFileOptions(radSkip.getSelection(), cbRemember.getSelection());
 			shell.dispose();

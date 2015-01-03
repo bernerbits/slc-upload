@@ -29,6 +29,9 @@ launch4j {
 repositories {
     mavenCentral()
     swtRepo()
+    flatDir {
+       	dirs '../lib'
+   	}
 }
 
 dependencies {

@@ -14,19 +14,24 @@ import java.io.StringReader;
 import javax.swing.ImageIcon;
 import javax.swing.filechooser.FileSystemView;
 
+import org.apache.batik.transcoder.SVGAbstractTranscoder;
 import org.apache.batik.transcoder.Transcoder;
 import org.apache.batik.transcoder.TranscoderInput;
 import org.apache.batik.transcoder.TranscoderOutput;
 import org.apache.batik.transcoder.image.PNGTranscoder;
+import org.apache.log4j.Logger;
 import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.graphics.ImageData;
 import org.eclipse.swt.graphics.PaletteData;
 import org.eclipse.swt.graphics.RGB;
 import org.eclipse.swt.widgets.Display;
+import org.eclipse.wb.swt.SWTResourceManager;
 
 import sun.awt.shell.ShellFolder;
 
 public class FileIcons {
+	private static Logger logger = Logger.getLogger(FileIcons.class);
+
 	public static ImageData convertToSWT(BufferedImage bufferedImage) {
 		if (bufferedImage.getColorModel() instanceof DirectColorModel) {
 			DirectColorModel colorModel = (DirectColorModel) bufferedImage.getColorModel();
@@ -82,12 +87,13 @@ public class FileIcons {
 		try {
 			tempDir = File.createTempFile("tmp", "file");
 			tempDir.delete();
-		} catch (IOException e) {
-			throw new ExceptionInInitializerError(e);
+			ImageIcon systemIcon = (ImageIcon) FileSystemView.getFileSystemView()
+					.getSystemIcon(tempDir.getParentFile());
+			java.awt.Image image = systemIcon.getImage();
+			return convertToSWT(image);
+		} catch (Throwable e) {
+			return SWTResourceManager.getImage(FileIcons.class, "/file_icon.png");
 		}
-		ImageIcon systemIcon = (ImageIcon) FileSystemView.getFileSystemView().getSystemIcon(tempDir.getParentFile());
-		java.awt.Image image = systemIcon.getImage();
-		return convertToSWT(image);
 	}
 
 	public static Image getDefaultFileImage() {
@@ -99,17 +105,21 @@ public class FileIcons {
 			} finally {
 				tempFile.delete();
 			}
-		} catch (IOException e) {
-			throw new ExceptionInInitializerError(e);
+		} catch (Throwable e) {
+			return SWTResourceManager.getImage(FileIcons.class, "file_icon.png");
 		}
 	}
 
 	public static Image getFileImage(File file) throws IOException {
-		ShellFolder sf = ShellFolder.getShellFolder(file);
+		try {
+			ShellFolder sf = ShellFolder.getShellFolder(file);
 
-		ImageIcon systemIcon = new ImageIcon(sf.getIcon(true), sf.getFolderType());
-		java.awt.Image image = systemIcon.getImage();
-		return convertToSWT(image);
+			ImageIcon systemIcon = new ImageIcon(sf.getIcon(true), sf.getFolderType());
+			java.awt.Image image = systemIcon.getImage();
+			return convertToSWT(image);
+		} catch (Throwable e) {
+			return SWTResourceManager.getImage(FileIcons.class, "file_icon.png");
+		}
 	}
 
 	public static Image getBucketImage(int size) throws IOException {
@@ -142,8 +152,8 @@ public class FileIcons {
 		Transcoder t = new PNGTranscoder();
 
 		// Set the transcoding hints.
-		t.addTranscodingHint(PNGTranscoder.KEY_WIDTH, new Float(size));
-		t.addTranscodingHint(PNGTranscoder.KEY_HEIGHT, new Float(size));
+		t.addTranscodingHint(SVGAbstractTranscoder.KEY_WIDTH, new Float(size));
+		t.addTranscodingHint(SVGAbstractTranscoder.KEY_HEIGHT, new Float(size));
 		TranscoderInput input = new TranscoderInput(new StringReader(bucketSvg));
 
 		ByteArrayOutputStream ostream = null;
@@ -159,7 +169,7 @@ public class FileIcons {
 			ostream.flush();
 			ostream.close();
 		} catch (Exception ex) {
-			ex.printStackTrace();
+			logger.warn(ex.getMessage(), ex);
 		}
 
 		// Convert the byte stream into an image.

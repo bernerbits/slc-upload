@@ -6,7 +6,7 @@ import org.eclipse.swt.graphics.Color;
 public class ColoredText {
 	private final Color color;
 	private final String text;
-	
+
 	public ColoredText(@Nullable String text, @Nullable Color color) {
 		if (text != null && color != null) {
 			this.color = color;
@@ -23,5 +23,5 @@ public class ColoredText {
 	public String getText() {
 		return text;
 	}
-	
+
 }

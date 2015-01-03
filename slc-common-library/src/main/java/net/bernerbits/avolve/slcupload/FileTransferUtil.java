@@ -33,8 +33,7 @@ public class FileTransferUtil {
 		if (sourcePath.chars().anyMatch((c) -> (invalidChars.indexOf(c) >= 0) // OS-invalid
 				|| (c < '\u0020') // ctrls
 				|| (c > '\u007e' && c < '\u00a0') // ctrls
-				|| Character.getType(c) == Character.OTHER_SYMBOL
-		)) {
+				|| Character.getType(c) == Character.OTHER_SYMBOL)) {
 			throw new FileTransferException("Source path contains invalid characters.");
 		}
 

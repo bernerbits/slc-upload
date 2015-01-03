@@ -47,19 +47,19 @@ public final class NullSafe {
 	public static <T> Stream<T> streamArray(T[] array) {
 		return Arrays.stream(array);
 	}
-	
+
 	@SuppressWarnings("null")
 	public static <T> Stream<T> stream(Collection<T> c) {
-        return StreamSupport.stream(c.spliterator(), false);
+		return StreamSupport.stream(c.spliterator(), false);
 	}
-	
+
 	@SuppressWarnings("null")
-	public static <T> Collection<T> values(Map<?,T> m) {
+	public static <T> Collection<T> values(Map<?, T> m) {
 		return m.values();
 	}
 
 	@SuppressWarnings("null")
-	public static <T> Collection<T> keys(Map<T,?> m) {
+	public static <T> Collection<T> keys(Map<T, ?> m) {
 		return m.keySet();
 	}
 }

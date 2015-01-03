@@ -9,6 +9,7 @@ import net.bernerbits.avolve.slcupload.ui.model.ClipboardData;
 import net.bernerbits.avolve.slcupload.ui.model.ColoredText;
 import net.bernerbits.avolve.slcupload.util.function.NullSafe;
 
+import org.apache.log4j.Logger;
 import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.jface.viewers.ColumnLabelProvider;
 import org.eclipse.swt.dnd.HTMLTransfer;
@@ -18,6 +19,8 @@ import org.eclipse.swt.dnd.Transfer;
 import com.google.common.collect.ImmutableMap;
 
 public class ClipboardDataProvider {
+
+	private static Logger logger = Logger.getLogger(ClipboardDataProvider.class);
 
 	public ClipboardDataProvider() {
 	}
@@ -37,11 +40,13 @@ public class ClipboardDataProvider {
 	}
 
 	public String textTransfer(List<String> headers, List<ColumnLabelProvider> columns, List<?> selectedItems) {
+		logger.debug("Creating text clipboard data");
 		return createTransferData(headers, columns, selectedItems, ",", "\r\n", (b) -> b, (h) -> h, (r) -> r,
 				(hf) -> "\"" + hf + "\"", (rf) -> "\"" + rf.getText() + "\"");
 	}
 
 	public String htmlTransfer(List<String> headers, List<ColumnLabelProvider> columns, List<?> selectedItems) {
+		logger.debug("Creating HTML clipboard data");
 		return createTransferData(
 				headers,
 				columns,
@@ -86,14 +91,11 @@ public class ClipboardDataProvider {
 
 		sb.append(rowStream
 				.parallel()
-				.map((columns) -> 
-					rowDecorator.apply(
-						columns.stream()
-							.map((c) -> rowFieldDecorator.apply(c))
-							.reduce("", (r, f) -> r.isEmpty() ? f : r + colDelim + f)
-					)
-				).sequential()
-				.reduce(new StringBuilder(), (t, r) -> t.length() == 0 ? t.append(r) : t.append(rowDelim).append(r), (t1, t2) -> t1.append(t2)));
+				.map((columns) -> rowDecorator.apply(columns.stream().map((c) -> rowFieldDecorator.apply(c))
+						.reduce("", (r, f) -> r.isEmpty() ? f : r + colDelim + f)))
+				.sequential()
+				.reduce(new StringBuilder(), (t, r) -> t.length() == 0 ? t.append(r) : t.append(rowDelim).append(r),
+						(t1, t2) -> t1.append(t2)));
 
 		return bodyDecorator.apply(NullSafe.toString(sb));
 	}

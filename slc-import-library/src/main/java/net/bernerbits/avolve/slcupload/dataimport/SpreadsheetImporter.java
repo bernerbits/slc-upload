@@ -17,9 +17,14 @@ import net.bernerbits.avolve.slcupload.dataimport.handler.ErrorHandler;
 import net.bernerbits.avolve.slcupload.dataimport.model.SpreadsheetRow;
 import net.bernerbits.avolve.slcupload.model.FileTransferObject;
 
+import org.apache.commons.lang3.StringUtils;
+import org.apache.log4j.Logger;
+
 import com.google.common.base.Strings;
 
 public class SpreadsheetImporter {
+
+	private static Logger logger = Logger.getLogger(SpreadsheetImporter.class);
 
 	private Map<String, ISpreadsheetImporter> importers = new HashMap<String, ISpreadsheetImporter>();
 
@@ -30,18 +35,24 @@ public class SpreadsheetImporter {
 	}
 
 	public Iterable<SpreadsheetRow> importSpreadsheet(String inputFile) throws SpreadsheetImportException {
+		logger.debug("Importing spreadsheet: " + inputFile);
 		if (!new File(inputFile).exists()) {
+			logger.warn("Spreadsheet file not found: " + inputFile);
 			throw new SpreadsheetFileNotFoundException(inputFile);
 		}
 		if (inputFile.contains(".")) {
 			String extension = inputFile.substring(inputFile.lastIndexOf('.'));
+			logger.debug("Spreadsheet extension: " + extension);
 			ISpreadsheetImporter delegate = importers.get(extension.toLowerCase());
 			if (delegate != null) {
+				logger.debug("Delegating spreadsheet load: " + extension);
 				return delegate.importSpreadsheet(inputFile);
 			} else {
+				logger.warn("No delegate found for file extension: " + extension);
 				throw new FileExtensionNotRecognizedException(extension);
 			}
 		} else {
+			logger.warn("Bad or no file extension: " + inputFile);
 			throw new FileExtensionNotRecognizedException("");
 		}
 	}
@@ -52,6 +63,7 @@ public class SpreadsheetImporter {
 
 	public List<FileTransferObject> convertRows(Iterable<SpreadsheetRow> rows, ErrorHandler errorHandler)
 			throws SpreadsheetImportException {
+		logger.debug("Converting spreadsheet rows to pending transfers");
 		Iterator<SpreadsheetRow> it = rows.iterator();
 		if (!it.hasNext()) {
 			return Collections.<FileTransferObject> emptyList();
@@ -64,6 +76,7 @@ public class SpreadsheetImporter {
 		int fileNameCol = headerRow.find("filename");
 
 		if (projectIdCol == -1 || sourcePathCol == -1 || fileNameCol == -1) {
+			logger.warn("Could not convert spreadsheet - format is invalid");
 			throw new InvalidFormatSpreadsheetException();
 		}
 
@@ -78,8 +91,10 @@ public class SpreadsheetImporter {
 					&& !Strings.isNullOrEmpty(fileName)) {
 				transferObjects.add(new FileTransferObject(projectId, sourcePath, fileName));
 			} else if (!fileName.isEmpty()) {
+				logger.warn("Failed to convert row - projectID or sourcePath missing: " + StringUtils.join(row, "|"));
 				errorHandler.handleError("Missing projectID or sourcePath", fileName);
 			} else {
+				logger.warn("Failed to convert row - fileName missing: " + StringUtils.join(row, "|"));
 				errorHandler.handleError("Incomplete row", Arrays.toString(row.getValues()));
 			}
 		}

@@ -10,11 +10,18 @@ import org.apache.poi.ss.usermodel.Workbook;
 
 public class OldExcelSpreadsheetImporter extends BaseExcelSpreadsheetImporter {
 
+	@Override
 	protected Workbook openSpreadsheet(InputStream inputStream) throws IOException {
 		return new HSSFWorkbook(inputStream);
 	}
 
+	@Override
 	protected FormulaEvaluator getFormulaEvaluator(Workbook wb) throws IOException {
 		return new HSSFFormulaEvaluator((HSSFWorkbook) wb);
+	}
+
+	@Override
+	protected String getDebugDescription() {
+		return "MS Excel Legacy";
 	}
 }

@@ -11,18 +11,20 @@ import net.bernerbits.avolve.slcupload.dataimport.model.SpreadsheetRow;
 
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
+import org.apache.log4j.Logger;
 
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 
 public class CsvSpreadsheetImporter implements ISpreadsheetImporter {
 
+	private static Logger logger = Logger.getLogger(CsvSpreadsheetImporter.class);
+
 	@Override
 	public Iterable<SpreadsheetRow> importSpreadsheet(String fileName) throws SpreadsheetImportException {
+		logger.debug("Importing CSV file: " + fileName);
 		try {
-			CSVParser parser = CSVParser.parse(
-					Paths.get(fileName).toUri().toURL(), 
-					StandardCharsets.UTF_8,
+			CSVParser parser = CSVParser.parse(Paths.get(fileName).toUri().toURL(), StandardCharsets.UTF_8,
 					CSVFormat.EXCEL.withIgnoreEmptyLines(true));
 
 			return Lists.newArrayList(Iterables.transform(parser,

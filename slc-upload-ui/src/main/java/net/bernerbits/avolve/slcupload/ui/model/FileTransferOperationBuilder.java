@@ -6,9 +6,12 @@ import net.bernerbits.avolve.slcupload.dataimport.model.SpreadsheetRow;
 import net.bernerbits.avolve.slcupload.model.FileTransferObject;
 import net.bernerbits.avolve.slcupload.model.RemoteFolder;
 
+import org.apache.log4j.Logger;
 import org.eclipse.jdt.annotation.Nullable;
 
 public class FileTransferOperationBuilder {
+
+	private static Logger logger = Logger.getLogger(FileTransferOperationBuilder.class);
 
 	private @Nullable String folderSource;
 
@@ -24,6 +27,7 @@ public class FileTransferOperationBuilder {
 	}
 
 	public void setFolderSource(@Nullable String folderSource) {
+		logger.debug("Folder Source changed: " + folderSource);
 		this.folderSource = folderSource;
 	}
 
@@ -32,6 +36,7 @@ public class FileTransferOperationBuilder {
 	}
 
 	public void setS3Destination(@Nullable RemoteFolder s3Destination) {
+		logger.debug("Destination changed (s3): " + s3Destination);
 		this.s3Destination = s3Destination;
 		folderDestination = null;
 	}
@@ -41,6 +46,7 @@ public class FileTransferOperationBuilder {
 	}
 
 	public void setFolderDestination(@Nullable String folderDestination) {
+		logger.debug("Destination changed (folder): " + folderDestination);
 		this.folderDestination = folderDestination;
 		s3Destination = null;
 	}
@@ -50,6 +56,7 @@ public class FileTransferOperationBuilder {
 	}
 
 	public void setRows(@Nullable Iterable<SpreadsheetRow> rows) {
+		logger.debug("Spreadsheet rows loaded");
 		this.rows = rows;
 		this.convertedRows = null;
 	}
@@ -59,29 +66,32 @@ public class FileTransferOperationBuilder {
 	}
 
 	public void setConvertedRows(@Nullable List<FileTransferObject> convertedRows) {
+		logger.debug("Spreadsheet rows converted");
 		this.convertedRows = convertedRows;
 	}
 
 	public FileTransferOperation build() {
-		if (folderSource != null)
-		{
+		logger.debug("Building file transfer operation");
+		if (folderSource != null) {
 			String folderSource = this.folderSource;
-			if (convertedRows != null)
-			{
+			if (convertedRows != null) {
 				List<FileTransferObject> convertedRows = this.convertedRows;
 				if (folderDestination != null) {
 					return new FileSystemFileTransferOperation(folderSource, convertedRows, folderDestination);
 				} else if (s3Destination != null) {
 					return new S3FileTransferOperation(folderSource, convertedRows, s3Destination);
 				} else {
+					logger.warn("File transfer operation failed - destination not set");
 					throw new IllegalStateException("Cannot build file transfer operation: destination is null");
 				}
 			} else {
+				logger.warn("File transfer operation failed - converted rows not set");
 				throw new IllegalStateException("Cannot build file transfer operation: converted rows is null");
 			}
 		} else {
+			logger.warn("File transfer operation failed - source not set");
 			throw new IllegalStateException("Cannot build file transfer operation: source is null");
 		}
 	}
-	
+
 }

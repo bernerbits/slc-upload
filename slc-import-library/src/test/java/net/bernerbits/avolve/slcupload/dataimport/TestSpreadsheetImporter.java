@@ -27,7 +27,7 @@ public class TestSpreadsheetImporter {
 	private static File oldExcelFile;
 	private static File newExcelFile;
 	private static File textFile;
-	
+
 	@Mock
 	private ISpreadsheetImporter oldExcelImporter;
 	@Mock
@@ -38,19 +38,18 @@ public class TestSpreadsheetImporter {
 	private SpreadsheetImporter importer;
 
 	@BeforeClass
-	public static void createTempFiles() throws IOException
-	{
+	public static void createTempFiles() throws IOException {
 		newExcelFile = File.createTempFile("test.", ".xlsx");
 		oldExcelFile = File.createTempFile("test.", ".xls");
 		csvSheetFile = File.createTempFile("test.", ".csv");
 		textFile = File.createTempFile("test.", ".txt");
-		
+
 		newExcelFile.deleteOnExit();
 		oldExcelFile.deleteOnExit();
 		csvSheetFile.deleteOnExit();
 		textFile.deleteOnExit();
 	}
-	
+
 	@Before
 	public void setUp() {
 		importer = new SpreadsheetImporter();

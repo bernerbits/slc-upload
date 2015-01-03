@@ -16,19 +16,22 @@ public class DuplicateFileTransfer extends FileTransfer {
 	public boolean isDuplicate() {
 		return true;
 	}
-	
+
 	public int getDuplicateCount() {
 		return duplicateCount;
 	}
 
+	@Override
 	public String getPathAsString() {
 		return original.getPathAsString();
 	}
 
+	@Override
 	public FileTransferObject getTransferObject() {
 		return original.getTransferObject();
 	}
 
+	@Override
 	public String getDestination() {
 		return original.getDestination();
 	}
