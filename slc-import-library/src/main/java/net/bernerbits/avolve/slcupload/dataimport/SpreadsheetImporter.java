@@ -81,21 +81,27 @@ public class SpreadsheetImporter {
 		}
 
 		List<FileTransferObject> transferObjects = new ArrayList<>();
+		
 		while (it.hasNext()) {
 			SpreadsheetRow row = it.next();
-			String projectId = row.getValues()[projectIdCol];
-			String sourcePath = row.getValues()[sourcePathCol];
-			String fileName = row.getValues()[fileNameCol];
-
-			if (!Strings.isNullOrEmpty(projectId) && !Strings.isNullOrEmpty(sourcePath)
-					&& !Strings.isNullOrEmpty(fileName)) {
-				transferObjects.add(new FileTransferObject(projectId, sourcePath, fileName));
-			} else if (!fileName.isEmpty()) {
-				logger.warn("Failed to convert row - projectID or sourcePath missing: " + StringUtils.join(row, "|"));
-				errorHandler.handleError("Missing projectID or sourcePath", fileName);
-			} else {
-				logger.warn("Failed to convert row - fileName missing: " + StringUtils.join(row, "|"));
-				errorHandler.handleError("Incomplete row", Arrays.toString(row.getValues()));
+			try {
+				String projectId = row.getValues()[projectIdCol];
+				String sourcePath = row.getValues()[sourcePathCol];
+				String fileName = row.getValues()[fileNameCol];
+	
+				if (!Strings.isNullOrEmpty(projectId) && !Strings.isNullOrEmpty(sourcePath)
+						&& !Strings.isNullOrEmpty(fileName)) {
+					transferObjects.add(new FileTransferObject(projectId, sourcePath, fileName));
+				} else if (!fileName.isEmpty()) {
+					logger.warn("Failed to convert row - projectID or sourcePath missing: " + StringUtils.join(row, "|"));
+					errorHandler.handleError("Missing projectID or sourcePath", fileName);
+				} else {
+					logger.warn("Failed to convert row - fileName missing: " + StringUtils.join(row, "|"));
+					errorHandler.handleError("Incomplete row", Arrays.toString(row.getValues()));
+				}
+			} catch(RuntimeException e) {
+				logger.warn("Failed to convert row - unexpected error: " + StringUtils.join(row, "|"), e);
+				errorHandler.handleError("Unexpected error: " + e.toString(), Arrays.toString(row.getValues()));
 			}
 		}
 		return transferObjects;

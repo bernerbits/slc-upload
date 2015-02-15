@@ -1,8 +1,10 @@
 package net.bernerbits.avolve.slcupload.model;
 
+import net.bernerbits.avolve.slcupload.state.TaskDescriptor;
+
 import org.apache.log4j.Logger;
 
-public class FileTransferObject {
+public class FileTransferObject implements TaskDescriptor {
 
 	private static Logger logger = Logger.getLogger(FileTransferObject.class);
 

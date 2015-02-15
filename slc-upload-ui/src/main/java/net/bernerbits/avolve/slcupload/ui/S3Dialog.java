@@ -122,7 +122,13 @@ public class S3Dialog extends Dialog {
 		progress.setState(SWT.NORMAL);
 
 		awsKeyText = new Text(shell, SWT.BORDER);
+		awsKeyText.setTextLimit(32);
+		
 		String keyFromPrefs = Preferences.userNodeForPackage(SLCUploadUI.class).get("aws_key", "");
+		if (keyFromPrefs.length() > awsKeyText.getTextLimit()) {
+			logger.debug("AWS key from preferences is too big; truncating to " + awsKeyText.getTextLimit());
+			keyFromPrefs = keyFromPrefs.substring(0, awsKeyText.getTextLimit());
+		}
 		awsKeyText.setText(keyFromPrefs);
 		if (logger.isDebugEnabled()) {
 			if (!keyFromPrefs.isEmpty()) {
@@ -145,7 +151,14 @@ public class S3Dialog extends Dialog {
 		awsKeyText.setLayoutData(fd_awsKeyText);
 
 		awsSecretText = new Text(shell, SWT.BORDER | SWT.PASSWORD);
+		awsSecretText.setTextLimit(40);
+		
 		String secretFromPrefs = Preferences.userNodeForPackage(SLCUploadUI.class).get("aws_secret", "");
+		if (secretFromPrefs.length() > awsSecretText.getTextLimit()) {
+			logger.debug("AWS secret from preferences is too big; truncating to " + awsSecretText.getTextLimit());
+			secretFromPrefs = secretFromPrefs.substring(0, awsSecretText.getTextLimit());
+		}
+
 		awsSecretText.setText(secretFromPrefs);
 		if (logger.isDebugEnabled()) {
 			if (!secretFromPrefs.isEmpty()) {
@@ -270,7 +283,7 @@ public class S3Dialog extends Dialog {
 			String awsKey = awsKeyText.getText();
 			String awsSecret = awsSecretText.getText();
 
-			if (Strings.isNullOrEmpty(awsKey) || Strings.isNullOrEmpty(awsSecret)) {
+			if (Strings.isNullOrEmpty(awsKey) || Strings.isNullOrEmpty(awsSecret) || awsKey.length() < 16) {
 				logger.debug("S3 credentials incomplete - aborting check");
 				s3StatusLabel.setText("Please enter your S3 credentials.");
 				checkInProgress = false;
@@ -287,6 +300,10 @@ public class S3Dialog extends Dialog {
 	}
 
 	private void connectionCheckFinished(boolean success) {
+		if (shell.isDisposed()) {
+			logger.info("Dialog disposed - aborting.");
+			return;
+		}
 		shell.getDisplay().syncExec(() -> {
 			logger.debug("S3 connection check finished");
 			checkInProgress = false;
@@ -314,6 +331,10 @@ public class S3Dialog extends Dialog {
 	}
 
 	private void populateBucketTree(List<RemoteFolder> buckets) {
+		if (shell.isDisposed()) {
+			logger.info("Dialog disposed - aborting.");
+			return;
+		}
 		logger.debug("Populating the S3 bucket tree.");
 		shell.getDisplay().syncExec(() -> {
 			for (TreeItem item : s3BucketTree.getTree().getItems()) {
@@ -332,6 +353,10 @@ public class S3Dialog extends Dialog {
 	}
 
 	private void populateTreeItem(TreeItem parent, List<RemoteFolder> buckets) {
+		if (shell.isDisposed()) {
+			logger.info("Dialog disposed - aborting.");
+			return;
+		}
 		for (RemoteFolder bucket : buckets) {
 			logger.trace("Adding bucket prefix " + bucket.getPath());
 			TreeItem item = new TreeItem(parent, SWT.NONE);

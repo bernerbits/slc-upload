@@ -1,12 +1,6 @@
 package net.bernerbits.avolve.slcupload.ui;
 
-import static net.bernerbits.avolve.slcupload.FileTransferer.TransferState.ABORTED;
-import static net.bernerbits.avolve.slcupload.FileTransferer.TransferState.ACTIVE;
-import static net.bernerbits.avolve.slcupload.FileTransferer.TransferState.FINISHED;
-import static net.bernerbits.avolve.slcupload.FileTransferer.TransferState.PAUSED;
-import static net.bernerbits.avolve.slcupload.FileTransferer.TransferState.PAUSING;
-import static net.bernerbits.avolve.slcupload.FileTransferer.TransferState.STOPPED;
-import static net.bernerbits.avolve.slcupload.FileTransferer.TransferState.STOPPING;
+import static net.bernerbits.avolve.slcupload.state.ExecutionState.*;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
@@ -27,11 +21,11 @@ import java.util.function.Consumer;
 
 import net.bernerbits.avolve.slcupload.ErrorFileTransfer;
 import net.bernerbits.avolve.slcupload.FileTransfer;
-import net.bernerbits.avolve.slcupload.FileTransferer.TransferState;
 import net.bernerbits.avolve.slcupload.dataexport.ColumnDefinition;
 import net.bernerbits.avolve.slcupload.dataimport.exception.FileExtensionNotRecognizedException;
 import net.bernerbits.avolve.slcupload.dataimport.exception.SpreadsheetFileNotFoundException;
 import net.bernerbits.avolve.slcupload.dataimport.model.SpreadsheetRow;
+import net.bernerbits.avolve.slcupload.state.ExecutionState;
 import net.bernerbits.avolve.slcupload.ui.controller.SLCUploadController;
 import net.bernerbits.avolve.slcupload.ui.presenter.FileTransferPresenter;
 import net.bernerbits.avolve.slcupload.ui.util.ClipboardDataProvider;
@@ -565,13 +559,13 @@ public class SLCUploadShell extends Shell {
 
 		defineColumn("Status", new ClosureColumnLabelProvider<FileTransferPresenter>(FileTransferPresenter::status,
 				FileTransferPresenter::foregroundHint));
-		defineColumn("Dup", new ClosureColumnLabelProvider<FileTransferPresenter>(FileTransferPresenter::duplicates));
+		defineColumn("Versioned", new ClosureColumnLabelProvider<FileTransferPresenter>(FileTransferPresenter::duplicates));
 		defineColumn("Local path", new ClosureColumnLabelProvider<FileTransferPresenter>(
 				FileTransferPresenter::localPath));
 		defineColumn("Remote path", new ClosureColumnLabelProvider<FileTransferPresenter>(
 				FileTransferPresenter::remotePath));
 
-		transferResultsTable.setInput(transferResults);
+		transferResultsTable.setInput(errorTransferResults);
 
 		addListener(SWT.Close, new Listener() {
 			@Override
@@ -804,6 +798,7 @@ public class SLCUploadShell extends Shell {
 		transfersByPath.clear();
 		errorTransferResults.clear();
 		lblTransferResults.setText("");
+		
 		for (FileTransfer transfer : conversionResults) {
 			fileTransferUpdate(transfer);
 		}
@@ -957,7 +952,11 @@ public class SLCUploadShell extends Shell {
 	private void startTask(String waitMessage, Runnable task) {
 		currentTasks++;
 		setEnabled(false);
-		ProgressMonitorDialog dialog = new ProgressMonitorDialog(this);
+		ProgressMonitorDialog dialog = new ProgressMonitorDialog(this) {
+			@Override
+			protected void createCancelButton(Composite parent) {
+			}
+		};
 		dialog.setOpenOnRun(true);
 		dialog.setCancelable(false);
 		try {
@@ -1022,7 +1021,11 @@ public class SLCUploadShell extends Shell {
 						@Override
 						public String getText(@Nullable Object element) {
 							if (element != null) {
-								String text = ((SpreadsheetRow) element).getValues()[colInd];
+								String text = "";
+								String[] values = ((SpreadsheetRow) element).getValues();
+								if (colInd < values.length) {
+									text = values[colInd];
+								}
 								return text;
 							} else {
 								return "";
@@ -1050,7 +1053,7 @@ public class SLCUploadShell extends Shell {
 
 		busy("Writing \"" + csvFile + "\"...", () -> SLCUploadController.writeCsv(csvFile, results,
 				new ColumnDefinition<FileTransferPresenter>("Status", FileTransferPresenter::status),
-				new ColumnDefinition<FileTransferPresenter>("Dup", FileTransferPresenter::duplicates),
+				new ColumnDefinition<FileTransferPresenter>("Versioned", FileTransferPresenter::duplicates),
 				new ColumnDefinition<FileTransferPresenter>("Local Path", FileTransferPresenter::localPath),
 				new ColumnDefinition<FileTransferPresenter>("Remote Path", FileTransferPresenter::remotePath)));
 	}
@@ -1162,7 +1165,7 @@ public class SLCUploadShell extends Shell {
 		fileTransferProgress.setSelection(0);
 
 		String resultText = (transferResults.size() - errorTransferResults.size() - skippedCount) + " File(s) Copied, "
-				+ skippedCount + " Skipped, " + duplicateCount + " Duplicates, " + errorTransferResults.size()
+				+ skippedCount + " Skipped, " + duplicateCount + " Versioned, " + errorTransferResults.size()
 				+ " Errors";
 
 		int diff = slcUploadController.getTotalCount() - slcUploadController.getTransferCount();
@@ -1181,10 +1184,10 @@ public class SLCUploadShell extends Shell {
 		}
 	}
 
-	private void updateUIFromTransferState(TransferState state) {
+	private void updateUIFromTransferState(ExecutionState state) {
 		getDisplay().asyncExec(
 				() -> {
-					btnStartTransfer.setEnabled(state == STOPPED || state == FINISHED || state == ABORTED);
+					btnStartTransfer.setEnabled(state == STOPPED || state == PAUSED || state == FINISHED || state == ABORTED);
 					btnPauseTransfer.setEnabled(state == ACTIVE);
 					btnStopTransfer.setEnabled(state == ACTIVE || state == PAUSED);
 
@@ -1292,7 +1295,7 @@ public class SLCUploadShell extends Shell {
 			originalTransfer.addDuplicate();
 			if (logger.isTraceEnabled()) {
 				logger.trace("Duplicate transfer result: local=" + originalTransfer.localPath() + " remote="
-						+ originalTransfer.remotePath() + " duplicates=" + originalTransfer.duplicates() + " status="
+						+ originalTransfer.remotePath() + " versioned=" + originalTransfer.duplicates() + " status="
 						+ originalTransfer.status());
 			}
 			transferResultsTable.refresh(originalTransfer);

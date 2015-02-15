@@ -7,10 +7,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.prefs.Preferences;
 
 import net.bernerbits.avolve.slcupload.FileTransferer;
-import net.bernerbits.avolve.slcupload.FileTransferer.TransferState;
+import static net.bernerbits.avolve.slcupload.state.ExecutionState.*;
 import net.bernerbits.avolve.slcupload.S3Connection;
 import net.bernerbits.avolve.slcupload.S3Connector;
-import net.bernerbits.avolve.slcupload.callback.FileTransferStateChangeCallback;
 import net.bernerbits.avolve.slcupload.dataexport.CSVExporter;
 import net.bernerbits.avolve.slcupload.dataexport.ColumnDefinition;
 import net.bernerbits.avolve.slcupload.dataexport.FileExportException;
@@ -19,7 +18,11 @@ import net.bernerbits.avolve.slcupload.dataimport.exception.SpreadsheetImportExc
 import net.bernerbits.avolve.slcupload.dataimport.handler.ErrorHandler;
 import net.bernerbits.avolve.slcupload.dataimport.model.SpreadsheetRow;
 import net.bernerbits.avolve.slcupload.model.ExistingFileOptions;
+import net.bernerbits.avolve.slcupload.model.FileTransferObject;
 import net.bernerbits.avolve.slcupload.model.RemoteFolder;
+import net.bernerbits.avolve.slcupload.state.ControllableExecutor;
+import net.bernerbits.avolve.slcupload.state.ExecutionState;
+import net.bernerbits.avolve.slcupload.state.ExecutionStateChangeCallback;
 import net.bernerbits.avolve.slcupload.ui.ExistingFileDialog;
 import net.bernerbits.avolve.slcupload.ui.S3Dialog;
 import net.bernerbits.avolve.slcupload.ui.handler.BucketHandler;
@@ -58,10 +61,9 @@ public class SLCUploadController {
 
 	private final S3Connector s3Connector;
 
-	private final FileTransferer transferer;
-
 	private final FileTransferOperationBuilder transferBuilder;
 
+	private @Nullable ControllableExecutor<FileTransferObject> executor;
 	private @Nullable FileTransferOperation fileTransfer;
 	private @Nullable UserInputHandler userInputHandler;
 
@@ -69,7 +71,6 @@ public class SLCUploadController {
 		this.shell = shell;
 		this.importer = new SpreadsheetImporter();
 		this.s3Connector = new S3Connector();
-		this.transferer = new FileTransferer();
 		this.transferBuilder = new FileTransferOperationBuilder();
 	}
 
@@ -165,37 +166,43 @@ public class SLCUploadController {
 
 	public boolean isValidForTransfer(ValidationHandler handler, ErrorHandler errorHandler,
 			StartConversionHandler conversionHandler) {
-		logger.debug("Validating transfer operation");
-		fileTransfer = null;
-		if (transferBuilder.getRows() == null) {
-			logger.debug("Validation failed - input file not set");
-			handler.validationFailed("Please select an input file.");
-			return false;
-		} else if (transferBuilder.getConvertedRows() == null && !convertRows(errorHandler, conversionHandler)) {
-			logger.debug("Validation failed - input file headings invalid");
-			handler.validationFailed("The input file is not recognized. The following columns must be present: projectid, sourcepath, filename.");
-			return false;
-		} else if (transferBuilder.getConvertedRows().isEmpty()) {
-			logger.debug("Validation failed - input file is empty or invalid");
-			handler.validationFailed("The input file is empty or contains no valid file records.");
-			return false;
-		} else if (transferBuilder.getFolderSource() == null) {
-			logger.debug("Validation failed - source folder not set");
-			handler.validationFailed("Please select a source folder.");
-			return false;
-		} else if (transferBuilder.getS3Destination() == null && transferBuilder.getFolderDestination() == null) {
-			logger.debug("Validation failed - destination not set");
-			handler.validationFailed("Please select a destination.");
-			return false;
-		} else if (Strings.nullToEmpty(transferBuilder.getFolderDestination()).equalsIgnoreCase(
-				transferBuilder.getFolderSource())) {
-			logger.debug("Validation failed - source and destination same");
-			handler.validationFailed("Source and destination cannot be the same.");
+		try {
+			logger.debug("Validating transfer operation");
+			fileTransfer = null;
+			if (transferBuilder.getRows() == null) {
+				logger.debug("Validation failed - input file not set");
+				handler.validationFailed("Please select an input file.");
+				return false;
+			} else if (transferBuilder.getConvertedRows() == null && !convertRows(errorHandler, conversionHandler)) {
+				logger.debug("Validation failed - input file headings invalid");
+				handler.validationFailed("The input file is not recognized. The following columns must be present: projectid, sourcepath, filename.");
+				return false;
+			} else if (transferBuilder.getConvertedRows().isEmpty()) {
+				logger.debug("Validation failed - input file is empty or invalid");
+				handler.validationFailed("The input file is empty or contains no valid file records.");
+				return false;
+			} else if (transferBuilder.getFolderSource() == null) {
+				logger.debug("Validation failed - source folder not set");
+				handler.validationFailed("Please select a source folder.");
+				return false;
+			} else if (transferBuilder.getS3Destination() == null && transferBuilder.getFolderDestination() == null) {
+				logger.debug("Validation failed - destination not set");
+				handler.validationFailed("Please select a destination.");
+				return false;
+			} else if (Strings.nullToEmpty(transferBuilder.getFolderDestination()).equalsIgnoreCase(
+					transferBuilder.getFolderSource())) {
+				logger.debug("Validation failed - source and destination same");
+				handler.validationFailed("Source and destination cannot be the same.");
+				return false;
+			}
+			logger.debug("Validation succeeded - building file transfer operation");
+			fileTransfer = transferBuilder.build();
+			return true;
+		} catch (RuntimeException ex) {
+			logger.warn("Validation failed - unexpected error", ex);
+			handler.validationFailed("An unexpected error occurred during validation: " + ex.toString());
 			return false;
 		}
-		logger.debug("Validation succeeded - building file transfer operation");
-		fileTransfer = transferBuilder.build();
-		return true;
 	}
 
 	private boolean convertRows(ErrorHandler errorHandler, StartConversionHandler handler) {
@@ -215,7 +222,7 @@ public class SLCUploadController {
 	}
 
 	public void beginTransfer(ProgresssHandler progress, FileTransferUpdateHandler updateHandler,
-			UserInputHandler userInputHandler, FileTransferStateChangeCallback stateChangeListener) {
+			UserInputHandler userInputHandler, ExecutionStateChangeCallback stateChangeListener) {
 		if (fileTransfer != null) {
 			logger.debug("Starting file transfer");
 			synchronized (this) {
@@ -224,37 +231,35 @@ public class SLCUploadController {
 			FileTransferOperation fileTransfer = this.fileTransfer;
 			this.userInputHandler = userInputHandler;
 
-			GlobalConfigs.threadFactory.newThread(
-					() -> {
-						fileTransfer.resetCount();
-						if (fileTransfer instanceof FileSystemFileTransferOperation) {
-							logger.debug("Starting local file transfer");
-							transferer.performLocalTransfer(
-									fileTransfer.getTransferObjects(),
-									fileTransfer.getFolderSource(),
-									((FileSystemFileTransferOperation) fileTransfer).getFolderDestination(),
-									(update) -> shell.getDisplay().syncExec(
-											() -> {
-												float ratio = (fileTransfer.updateCount())
-														/ fileTransfer.getTransferObjects().size();
-												updateHandler.notifyFileTransfer(update);
-												progress.updateProgress(ratio, fileTransfer.isComplete());
-											}), SLCUploadController.this::getExistingFileOptions, stateChangeListener);
-						} else if (fileTransfer instanceof S3FileTransferOperation) {
-							logger.debug("Starting remote file transfer");
-							transferer.performRemoteTransfer(
-									fileTransfer.getTransferObjects(),
-									fileTransfer.getFolderSource(),
-									((S3FileTransferOperation) fileTransfer).getS3Destination(),
-									(update) -> shell.getDisplay().syncExec(
-											() -> {
-												float ratio = (fileTransfer.updateCount())
-														/ fileTransfer.getTransferObjects().size();
-												updateHandler.notifyFileTransfer(update);
-												progress.updateProgress(ratio, fileTransfer.isComplete());
-											}), SLCUploadController.this::getExistingFileOptions, stateChangeListener);
-						}
-					}).start();
+			fileTransfer.resetCount();
+			FileTransferer transferer;
+			if (fileTransfer instanceof FileSystemFileTransferOperation) {
+				logger.debug("Starting local file transfer");
+				transferer = new FileTransferer(fileTransfer.getFolderSource(),
+						((FileSystemFileTransferOperation) fileTransfer).getFolderDestination(),
+						(update) -> shell.getDisplay().syncExec(
+								() -> {
+									float ratio = (fileTransfer.updateCount())
+											/ fileTransfer.getTransferObjects().size();
+									updateHandler.notifyFileTransfer(update);
+									progress.updateProgress(ratio, fileTransfer.isComplete());
+								}), SLCUploadController.this::getExistingFileOptions);
+			} else if (fileTransfer instanceof S3FileTransferOperation) {
+				logger.debug("Starting remote file transfer");
+				transferer = new FileTransferer(fileTransfer.getFolderSource(),
+						((S3FileTransferOperation) fileTransfer).getS3Destination(),
+						(update) -> shell.getDisplay().syncExec(
+								() -> {
+									float ratio = (fileTransfer.updateCount())
+											/ fileTransfer.getTransferObjects().size();
+									updateHandler.notifyFileTransfer(update);
+									progress.updateProgress(ratio, fileTransfer.isComplete());
+								}), SLCUploadController.this::getExistingFileOptions);
+			} else {
+				throw new IllegalArgumentException("Incompatible File Transfer Type found : " + fileTransfer.getClass());
+			}
+			executor = new ControllableExecutor<FileTransferObject>(transferer, stateChangeListener);
+			executor.start(fileTransfer.getTransferObjects());
 		} else {
 			logger.warn("File transfer build did not complete - no file transfer started");
 			throw new IllegalStateException("Cannot begin transfer: convertedRows or folderSource is null");
@@ -263,17 +268,19 @@ public class SLCUploadController {
 
 	public void resumeTransfer() {
 		logger.debug("Resuming transfer");
-		transferer.resumeTransfer();
+		executor.resume();
 	}
 
 	public void pauseTransfer() {
 		logger.debug("Pausing transfer");
-		transferer.pauseTransfer();
+		executor.pause();
+		executor.awaitState(PAUSED);
 	}
 
 	public void stopTransfer() {
 		logger.debug("Stopping transfer");
-		transferer.stopTransfer();
+		executor.stop();
+		executor.awaitState(STOPPED);
 	}
 
 	private ExistingFileOptions existingFileOptions = null;
@@ -360,8 +367,8 @@ public class SLCUploadController {
 		new CSVExporter<T>().export(NullSafe.getPath(csvFile), results, columnDefinitions);
 	}
 
-	public boolean transferStateIsOneOf(TransferState... states) {
-		return transferer.stateIsOneOf(states);
+	public boolean transferStateIsOneOf(ExecutionState... states) {
+		return executor != null && executor.stateIsOneOf(states);
 	}
 
 }
