@@ -1,7 +1,7 @@
 package net.bernerbits.avolve.slcupload.callback;
 
-import net.bernerbits.avolve.slcupload.FileTransferer;
+import net.bernerbits.avolve.slcupload.state.ExecutionState;
 
 public interface FileTransferStateChangeCallback {
-	public void stateChange(FileTransferer.TransferState newState);
+	public void stateChange(ExecutionState newState);
 }
