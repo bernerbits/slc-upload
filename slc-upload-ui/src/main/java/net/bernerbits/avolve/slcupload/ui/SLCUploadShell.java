@@ -906,7 +906,11 @@ public class SLCUploadShell extends Shell {
 		T value;
 		try {
 			value = result.get();
-			getDisplay().asyncExec(() -> handler.accept(value));
+			getDisplay().asyncExec(() -> {
+				for(int i = 0; i < 3 ; i++) System.gc();
+				handler.accept(value);
+				for(int i = 0; i < 3 ; i++) System.gc();
+			});
 		} catch (ExecutionException e) {
 			if (e.getCause() instanceof OutOfMemoryError) {
 				System.gc();
