@@ -23,7 +23,9 @@ launch4j {
     outfile = 'pa-transport.exe'
     icon = file('src/main/resources/ftm-export.ico')
     bundledJrePath = 'jre8'
-    maxHeapSize = 1536
+    initialHeapPercent = 1
+    maxHeapPercent = 60
+    opt = '-XX:MaxHeapFreeRatio=35 -XX:MinHeapFreeRatio=25'
 }
 
 repositories {

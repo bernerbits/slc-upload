@@ -17,10 +17,12 @@ import net.bernerbits.avolve.slcupload.dataimport.handler.ErrorHandler;
 import net.bernerbits.avolve.slcupload.dataimport.model.SpreadsheetRow;
 import net.bernerbits.avolve.slcupload.model.FileTransferObject;
 
+import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.log4j.Logger;
 
 import com.google.common.base.Strings;
+import com.google.common.collect.Collections2;
 
 public class SpreadsheetImporter {
 
@@ -85,19 +87,24 @@ public class SpreadsheetImporter {
 		while (it.hasNext()) {
 			SpreadsheetRow row = it.next();
 			try {
-				String projectId = row.getValues()[projectIdCol];
-				String sourcePath = row.getValues()[sourcePathCol];
-				String fileName = row.getValues()[fileNameCol];
-	
-				if (!Strings.isNullOrEmpty(projectId) && !Strings.isNullOrEmpty(sourcePath)
-						&& !Strings.isNullOrEmpty(fileName)) {
-					transferObjects.add(new FileTransferObject(projectId, sourcePath, fileName));
-				} else if (!fileName.isEmpty()) {
-					logger.warn("Failed to convert row - projectID or sourcePath missing: " + StringUtils.join(row, "|"));
-					errorHandler.handleError("Missing projectID or sourcePath", fileName);
+				if(rowHasColumns(row, projectIdCol, sourcePathCol, fileNameCol)) {
+					String projectId = row.getValues()[projectIdCol];
+					String sourcePath = row.getValues()[sourcePathCol];
+					String fileName = row.getValues()[fileNameCol];
+		
+					if (!Strings.isNullOrEmpty(projectId) && !Strings.isNullOrEmpty(sourcePath)
+							&& !Strings.isNullOrEmpty(fileName)) {
+						transferObjects.add(new FileTransferObject(projectId, sourcePath, fileName));
+					} else if (!fileName.isEmpty()) {
+						logger.warn("Failed to convert row - projectID or sourcePath missing: " + StringUtils.join(row, "|"));
+						errorHandler.handleError("Missing projectID or sourcePath", fileName);
+					} else {
+						logger.warn("Failed to convert row - fileName missing: " + StringUtils.join(row, "|"));
+						errorHandler.handleError("Incomplete row", Arrays.toString(row.getValues()));
+					}
 				} else {
-					logger.warn("Failed to convert row - fileName missing: " + StringUtils.join(row, "|"));
-					errorHandler.handleError("Incomplete row", Arrays.toString(row.getValues()));
+					logger.warn("Failed to convert row - not enough columns (" + row.getValues().length + ", expecting " + headerRow.getValues().length + "):" + StringUtils.join(row, "|"));
+					errorHandler.handleError("Row is too short - " + row.getValues().length + " columns, expecting " + headerRow.getValues().length, Arrays.toString(row.getValues()));
 				}
 			} catch(RuntimeException e) {
 				logger.warn("Failed to convert row - unexpected error: " + StringUtils.join(row, "|"), e);
@@ -105,6 +112,15 @@ public class SpreadsheetImporter {
 			}
 		}
 		return transferObjects;
+	}
+
+	private static boolean rowHasColumns(SpreadsheetRow row, int... colIndexes) {
+		int maxIndex = Arrays.stream(colIndexes).max().orElse(-1);
+		if (maxIndex < row.getValues().length) {
+			return true;
+		} else {
+			return false;
+		}
 	}
 
 }

@@ -210,6 +210,7 @@ public class SLCUploadController {
 		Iterable<SpreadsheetRow> rows = transferBuilder.getRows();
 		if (rows != null) {
 			try {
+				handler.conversionStarted();
 				transferBuilder.setConvertedRows(importer.convertRows(rows, errorHandler));
 				return true;
 			} catch (SpreadsheetImportException e) {
