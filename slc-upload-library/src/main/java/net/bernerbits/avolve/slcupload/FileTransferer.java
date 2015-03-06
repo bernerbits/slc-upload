@@ -1,6 +1,12 @@
 package net.bernerbits.avolve.slcupload;
 
 import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 
 import net.bernerbits.avolve.slcupload.callback.FileTransferCallback;
@@ -12,6 +18,7 @@ import net.bernerbits.avolve.slcupload.state.TaskHandler;
 
 import org.apache.log4j.Logger;
 
+import com.google.common.base.Supplier;
 import com.google.common.collect.ConcurrentHashMultiset;
 import com.google.common.collect.Multiset;
 
@@ -20,8 +27,9 @@ public class FileTransferer implements TaskHandler<FileTransferObject> {
 
 	private Function<FileTransferObject, FileTransfer> transferMapper;
 	private Multiset<Path> pathCounts = ConcurrentHashMultiset.create();
+	private Set<Path> finishedPaths = new HashSet<>();
 	private FileTransferCallback callback;
-
+	
 	public FileTransferer(String folderSource, String folderDestination, FileTransferCallback callback,
 			ExistingFileHandler handler) {
 		logger.debug("Starting local transfer from " + folderSource + " to " + folderDestination);
@@ -59,22 +67,48 @@ public class FileTransferer implements TaskHandler<FileTransferObject> {
 		if (tr instanceof RealFileTransfer) {
 			RealFileTransfer rtr = (RealFileTransfer) tr;
 			Path p = rtr.getPath();
-			try {
-				if (!pathCounts.contains(p)) {
-					try {
-						rtr.transfer();
-					} finally {
-						callback.onFileTransfer(rtr);
-					}
-				} else {
-					callback.onFileTransfer(new DuplicateFileTransfer(rtr, pathCounts.count(p)));
+			
+			int duplicates = pathCounts.add(p,1);
+			if (duplicates == 0) {
+				try {
+					rtr.transfer();
+				} finally {
+					callback.onFileTransfer(rtr);
+					doAndNotify(() -> finishedPaths.add(p));
 				}
-			} finally {
-				pathCounts.add(p);
+			} else {
+				waitUntil(() -> finishedPaths.contains(p));
+				callback.onFileTransfer(new DuplicateFileTransfer(rtr, duplicates));
 			}
 		} else {
 			callback.onFileTransfer(tr);
 		}
 	}
 
+	// Notify/wait helper methods
+	
+	private Lock pathsLock = new ReentrantLock();
+	private Condition pathsCondition = pathsLock.newCondition();
+
+	private void doAndNotify(Runnable r) {
+		pathsLock.lock();
+		try {
+			r.run();
+			pathsCondition.signalAll();
+		} finally {
+			pathsLock.unlock();
+		}
+	}
+	
+	private void waitUntil(Supplier<Boolean> condition) {
+		pathsLock.lock();
+		try {
+			while (!condition.get()) {
+				pathsCondition.awaitUninterruptibly();
+			}
+		} finally {
+			pathsLock.unlock();
+		}
+	}
+	
 }
